@@ -90,9 +90,9 @@
 	},
 	"exportQuality": {
 		"title": "导出分辨率",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "1080p",
+		"medium": "4K",
+		"high": "原始"
 	},
 	"gifSettings": {
 		"frameRate": "GIF 帧率",

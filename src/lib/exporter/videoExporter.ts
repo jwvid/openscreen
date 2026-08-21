@@ -535,7 +535,7 @@ export class VideoExporter {
 
 							const metadata: EncodedVideoChunkMetadata = {
 								decoderConfig: {
-									codec: this.config.codec || "avc1.640033",
+									codec: this.config.codec || "avc1.640034",
 									codedWidth: this.config.width,
 									codedHeight: this.config.height,
 									description: this.videoDescription,
@@ -565,7 +565,7 @@ export class VideoExporter {
 		});
 
 		const encoderConfig: VideoEncoderConfig = {
-			codec: this.config.codec || "avc1.640033",
+			codec: this.config.codec || "avc1.640034",
 			width: this.config.width,
 			height: this.config.height,
 			bitrate: this.config.bitrate,

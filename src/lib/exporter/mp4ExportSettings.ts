@@ -11,8 +11,10 @@ interface SourceCropRegion {
 	height: number;
 }
 
-const MEDIUM_SHORT_SIDE = 720;
-const HIGH_SHORT_SIDE = 1080;
+const MEDIUM_SHORT_SIDE = 1080;
+const HIGH_SHORT_SIDE = 2160;
+const H264_LEVEL_5_2_CODEC = "avc1.640034";
+const HEVC_MAIN_HIGH_TIER_LEVEL_5_2_CODEC = "hvc1.1.6.H156.B0";
 
 function even(value: number) {
 	return Math.floor(value / 2) * 2;
@@ -95,17 +97,19 @@ function calculateSourceDimensions(
 }
 
 function calculateBitrate(width: number, height: number, quality: ExportQuality) {
-	const totalPixels = width * height;
+	const shortSide = Math.min(width, height);
 
 	if (quality === "source") {
-		if (totalPixels > 2560 * 1440) return 80_000_000;
-		if (totalPixels > 1920 * 1080) return 50_000_000;
-		return 30_000_000;
+		if (shortSide > 2160) return 200_000_000;
+		if (shortSide > 1440) return 120_000_000;
+		if (shortSide > 1080) return 75_000_000;
+		return 40_000_000;
 	}
 
-	if (totalPixels <= 1280 * 720) return 10_000_000;
-	if (totalPixels <= 1920 * 1080) return 20_000_000;
-	return 30_000_000;
+	if (shortSide <= 1080) return 35_000_000;
+	if (shortSide <= 1440) return 60_000_000;
+	if (shortSide <= 2160) return 100_000_000;
+	return 160_000_000;
 }
 
 export function calculateMp4ExportSettings({
@@ -140,4 +144,9 @@ export function calculateMp4ExportSettings({
 		...sourceDimensions,
 		bitrate: calculateBitrate(sourceDimensions.width, sourceDimensions.height, quality),
 	};
+}
+
+/** Uses HEVC when source-sized output exceeds common H.264 hardware limits. */
+export function selectMp4ExportCodec(width: number, height: number) {
+	return width > 4096 || height > 2304 ? HEVC_MAIN_HIGH_TIER_LEVEL_5_2_CODEC : H264_LEVEL_5_2_CODEC;
 }

@@ -4,6 +4,7 @@ export {
 	calculateEffectiveSourceDimensions,
 	calculateMp4ExportSettings,
 	type Mp4ExportSettings,
+	selectMp4ExportCodec,
 } from "./mp4ExportSettings";
 export { VideoMuxer } from "./muxer";
 export { StreamingVideoDecoder } from "./streamingDecoder";

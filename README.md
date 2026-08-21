@@ -35,7 +35,7 @@ Screen Studio is an awesome product and this is definitely not a 1:1 clone. If y
 </p>
 
 ## Core Features
-- Record a specific window, or your whole screen.
+- Record a specific window or your whole screen at its native framebuffer resolution on macOS.
 - Record microphone and system audio.
 - Webcam overlay with picture-in-picture, drag-to-position, mirroring, and shape options.
 - Auto or manual zooms with adjustable depth, duration, easing, and pixel-precise position; auto-zoom follows your cursor as you work.
@@ -47,7 +47,7 @@ Screen Studio is an awesome product and this is definitely not a 1:1 clone. If y
 - Text, arrow, and image annotations, with text animation presets.
 - Timeline snapping guides and an audio waveform to make trimming easier.
 - Customizable keyboard shortcuts.
-- Export to MP4 or GIF in multiple aspect ratios and resolutions.
+- Export to MP4 or GIF in multiple aspect ratios, with 1080p, 4K, and original-resolution MP4 presets.
 - Languages supported: Arabic, English, Spanish, French, Italian, Japanese, Korean, Portuguese (Brazil), Russian, Turkish, Vietnamese, Simplified Chinese, and Traditional Chinese.
 
 

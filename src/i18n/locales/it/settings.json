@@ -90,8 +90,8 @@
 	},
 	"exportQuality": {
 		"title": "Risoluzione esportazione",
-		"low": "720p",
-		"medium": "1080p",
+		"low": "1080p",
+		"medium": "4K",
 		"high": "Originale"
 	},
 	"gifSettings": {

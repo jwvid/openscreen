@@ -3,6 +3,7 @@ import CoreGraphics
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
+import VideoToolbox
 
 struct Rectangle: Decodable {
 	let x: Double
@@ -143,6 +144,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	private var nativeMicrophoneEnabled = false
 	private var outputWidth = 1920
 	private var outputHeight = 1080
+	private var outputCodec = AVVideoCodecType.h264
+	private var outputBitrate = 18_000_000
 	private let microphoneOutputTypeRawValue = 2
 	private let hostClock = CMClockGetHostTimeClock()
 
@@ -346,12 +349,15 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			guard let display = content.displays.first(where: { $0.displayID == displayId }) else {
 				throw HelperError.sourceNotFound("No ScreenCaptureKit display found for id \(displayId).")
 			}
-			let width = Int(CGDisplayPixelsWide(display.displayID))
-			let height = Int(CGDisplayPixelsHigh(display.displayID))
+			// CGDisplayPixelsWide/High can report the logical "looks like" size for
+			// Retina and virtual displays. The active display mode carries the actual
+			// framebuffer size ScreenCaptureKit can deliver (for example 3840x2160
+			// for a display that looks like 1920x1080).
+			let nativeDimensions = Self.nativePixelDimensions(for: display.displayID)
 			return CaptureTarget(
 				filter: SCContentFilter(display: display, excludingWindows: []),
-				width: clampCaptureDimension(width, fallback: request.video.width),
-				height: clampCaptureDimension(height, fallback: request.video.height)
+				width: clampCaptureDimension(nativeDimensions.width, fallback: request.video.width),
+				height: clampCaptureDimension(nativeDimensions.height, fallback: request.video.height)
 			)
 		case "window":
 			guard let windowId = request.source.windowId else {
@@ -421,14 +427,23 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		)
 
 		let writer = try AVAssetWriter(outputURL: outputUrl, fileType: .mp4)
+		outputCodec = preferredVideoCodec()
+		outputBitrate = resolvedVideoBitrate()
+		var compressionProperties: [String: Any] = [
+			AVVideoAverageBitRateKey: outputBitrate,
+			AVVideoExpectedSourceFrameRateKey: request.video.fps,
+			AVVideoMaxKeyFrameIntervalKey: max(1, request.video.fps * 2),
+		]
+		if outputCodec == .hevc {
+			compressionProperties[AVVideoProfileLevelKey] = kVTProfileLevel_HEVC_Main_AutoLevel
+		} else {
+			compressionProperties[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel
+		}
 		let settings: [String: Any] = [
-			AVVideoCodecKey: AVVideoCodecType.h264,
+			AVVideoCodecKey: outputCodec,
 			AVVideoWidthKey: outputWidth,
 			AVVideoHeightKey: outputHeight,
-			AVVideoCompressionPropertiesKey: [
-				AVVideoAverageBitRateKey: request.video.bitrate ?? 18_000_000,
-				AVVideoExpectedSourceFrameRateKey: request.video.fps,
-			],
+			AVVideoCompressionPropertiesKey: compressionProperties,
 		]
 		let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
 		input.expectsMediaDataInRealTime = true
@@ -586,10 +601,43 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 	}
 
 	private func clampCaptureDimension(_ value: Int, fallback: Int) -> Int {
-		let requested = max(2, fallback)
-		let candidate = value > 0 ? value : requested
-		let clamped = min(candidate, requested)
+		let requested = fallback > 0 ? fallback : nil
+		let candidate = value > 0 ? value : (requested ?? 2)
+		let clamped = requested.map { min(candidate, $0) } ?? candidate
 		return max(2, clamped - (clamped % 2))
+	}
+
+	private func preferredVideoCodec() -> AVVideoCodecType {
+		// H.264 hardware encoders commonly top out around DCI 4K. Preserve larger
+		// Retina/5K/6K sources with HEVC instead of silently reducing dimensions.
+		if outputWidth > 4096 || outputHeight > 2304 {
+			return .hevc
+		}
+		return .h264
+	}
+
+	private func resolvedVideoBitrate() -> Int {
+		if let requested = request.video.bitrate, requested > 0 {
+			return requested
+		}
+
+		// Screen content needs enough bitrate to keep text and thin UI edges crisp.
+		// Scale with both source pixels and frame rate, then bound the request so
+		// high-resolution captures stay practical on Apple Silicon hardware.
+		let pixelsPerSecond = Double(outputWidth * outputHeight * max(1, request.video.fps))
+		let adaptive = Int((pixelsPerSecond * 0.16).rounded())
+		return min(240_000_000, max(24_000_000, adaptive))
+	}
+
+	private static func nativePixelDimensions(for displayId: CGDirectDisplayID) -> (width: Int, height: Int) {
+		if let mode = CGDisplayCopyDisplayMode(displayId), mode.pixelWidth > 0, mode.pixelHeight > 0 {
+			return (mode.pixelWidth, mode.pixelHeight)
+		}
+
+		return (
+			Int(CGDisplayPixelsWide(displayId)),
+			Int(CGDisplayPixelsHigh(displayId))
+		)
 	}
 
 	private static func scaleFactor(for displayId: CGDirectDisplayID) -> Int {

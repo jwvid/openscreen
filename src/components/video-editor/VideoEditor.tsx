@@ -47,6 +47,7 @@ import {
 	GifExporter,
 	type GifFrameRate,
 	type GifSizePreset,
+	selectMp4ExportCodec,
 	VideoExporter,
 } from "@/lib/exporter";
 import { computeFrameStepTime } from "@/lib/frameStep";
@@ -1978,6 +1979,7 @@ export default function VideoEditor() {
 						sourceHeight: effectiveSourceDimensions.height,
 						aspectRatioValue,
 					});
+					const codec = selectMp4ExportCodec(exportWidth, exportHeight);
 
 					const exporter = new VideoExporter({
 						videoUrl: videoPath,
@@ -1986,7 +1988,7 @@ export default function VideoEditor() {
 						height: exportHeight,
 						frameRate: 60,
 						bitrate,
-						codec: "avc1.640033",
+						codec,
 						wallpaper,
 						zoomRegions,
 						trimRegions,
@@ -2056,7 +2058,7 @@ export default function VideoEditor() {
 							width: exportWidth,
 							height: exportHeight,
 							frameRate: 60,
-							codec: "avc1.640033",
+							codec,
 							bitrate,
 						});
 						setExportError(message);

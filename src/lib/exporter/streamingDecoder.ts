@@ -335,10 +335,10 @@ export class StreamingVideoDecoder {
 		}
 
 		if (/^avc1$/i.test(decoderConfig.codec)) {
-			decoderConfig.codec = "avc1.640033";
+			decoderConfig.codec = "avc1.640034";
 		}
 		if (/^h264$/i.test(decoderConfig.codec)) {
-			decoderConfig.codec = "avc1.640033";
+			decoderConfig.codec = "avc1.640034";
 		}
 
 		const codec = decoderConfig.codec.toLowerCase();
@@ -410,7 +410,7 @@ export class StreamingVideoDecoder {
 			if (shouldPreferSoftwareDecode) {
 				this.decoder.configure(decoderConfig);
 			} else if (/^avc1/i.test(codec)) {
-				const fallback = { ...decoderConfig, codec: "avc1.640033" };
+				const fallback = { ...decoderConfig, codec: "avc1.640034" };
 				console.warn(
 					`[StreamingVideoDecoder] codec "${codec}" unsupported, ` +
 						`falling back to "${fallback.codec}"`,

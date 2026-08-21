@@ -366,8 +366,8 @@ const ZOOM_DEPTH_OPTIONS: Array<{ depth: ZoomDepth; label: string }> = [
 type SettingsPanelMode = "background" | "effects" | "layout" | "cursor" | "export" | "timeline";
 
 const MP4_EXPORT_SHORT_SIDES = {
-	medium: 720,
-	good: 1080,
+	medium: 1080,
+	good: 2160,
 } as const;
 
 function formatSourceDimensions(videoElement?: HTMLVideoElement | null, cropRegion?: CropRegion) {

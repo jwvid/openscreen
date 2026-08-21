@@ -90,9 +90,9 @@
 	},
 	"exportQuality": {
 		"title": "Độ phân giải xuất",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "1080p",
+		"medium": "4K",
+		"high": "Gốc"
 	},
 	"gifSettings": {
 		"frameRate": "Tốc độ khung hình GIF",

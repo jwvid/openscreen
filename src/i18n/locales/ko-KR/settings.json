@@ -90,9 +90,9 @@
 	},
 	"exportQuality": {
 		"title": "내보내기 해상도",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "1080p",
+		"medium": "4K",
+		"high": "원본"
 	},
 	"gifSettings": {
 		"frameRate": "GIF 프레임 속도",

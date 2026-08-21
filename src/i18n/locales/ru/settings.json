@@ -90,9 +90,9 @@
 	},
 	"exportQuality": {
 		"title": "Разрешение экспорта",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "1080p",
+		"medium": "4K",
+		"high": "Оригинал"
 	},
 	"gifSettings": {
 		"frameRate": "Частота кадров GIF",

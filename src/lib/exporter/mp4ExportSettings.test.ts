@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	calculateEffectiveSourceDimensions,
 	calculateMp4ExportSettings,
+	selectMp4ExportCodec,
 } from "./mp4ExportSettings";
 
 describe("calculateMp4ExportSettings", () => {
-	it("keeps 1080p explicit even when it upscales short native captures", () => {
+	it("keeps 4K explicit even when it upscales shorter native captures", () => {
 		const aspectRatioValue = 1920 / 1032;
 
 		expect(
@@ -16,9 +17,9 @@ describe("calculateMp4ExportSettings", () => {
 				aspectRatioValue,
 			}),
 		).toMatchObject({
-			width: 2008,
-			height: 1080,
-			bitrate: 30_000_000,
+			width: 4018,
+			height: 2160,
+			bitrate: 100_000_000,
 		});
 
 		expect(
@@ -31,7 +32,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 1920,
 			height: 1032,
-			bitrate: 30_000_000,
+			bitrate: 40_000_000,
 		});
 	});
 
@@ -44,13 +45,13 @@ describe("calculateMp4ExportSettings", () => {
 				aspectRatioValue: 1920 / 1032,
 			}),
 		).toMatchObject({
-			width: 1338,
-			height: 720,
-			bitrate: 20_000_000,
+			width: 2008,
+			height: 1080,
+			bitrate: 35_000_000,
 		});
 	});
 
-	it("keeps 1080p explicit even for 720p source dimensions", () => {
+	it("keeps 4K explicit even for 720p source dimensions", () => {
 		expect(
 			calculateMp4ExportSettings({
 				quality: "good",
@@ -59,9 +60,9 @@ describe("calculateMp4ExportSettings", () => {
 				aspectRatioValue: 16 / 9,
 			}),
 		).toMatchObject({
-			width: 1920,
-			height: 1080,
-			bitrate: 20_000_000,
+			width: 3840,
+			height: 2160,
+			bitrate: 100_000_000,
 		});
 	});
 
@@ -76,7 +77,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 1920,
 			height: 1080,
-			bitrate: 30_000_000,
+			bitrate: 40_000_000,
 		});
 
 		expect(
@@ -89,7 +90,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 3840,
 			height: 2160,
-			bitrate: 80_000_000,
+			bitrate: 120_000_000,
 		});
 	});
 
@@ -102,9 +103,9 @@ describe("calculateMp4ExportSettings", () => {
 				aspectRatioValue: 9 / 16,
 			}),
 		).toMatchObject({
-			width: 1080,
-			height: 1920,
-			bitrate: 20_000_000,
+			width: 2160,
+			height: 3840,
+			bitrate: 100_000_000,
 		});
 	});
 
@@ -129,7 +130,7 @@ describe("calculateMp4ExportSettings", () => {
 		).toMatchObject({
 			width: 854,
 			height: 480,
-			bitrate: 30_000_000,
+			bitrate: 40_000_000,
 		});
 
 		expect(
@@ -140,9 +141,15 @@ describe("calculateMp4ExportSettings", () => {
 				aspectRatioValue: effectiveSource.width / effectiveSource.height,
 			}),
 		).toMatchObject({
-			width: 1920,
-			height: 1080,
-			bitrate: 20_000_000,
+			width: 3842,
+			height: 2160,
+			bitrate: 100_000_000,
 		});
+	});
+
+	it("uses HEVC only when original output exceeds H.264 hardware dimensions", () => {
+		expect(selectMp4ExportCodec(3840, 2160)).toBe("avc1.640034");
+		expect(selectMp4ExportCodec(4096, 2304)).toBe("avc1.640034");
+		expect(selectMp4ExportCodec(5120, 2880)).toBe("hvc1.1.6.H156.B0");
 	});
 });

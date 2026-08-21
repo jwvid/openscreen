@@ -971,9 +971,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				},
 				video: {
 					fps: TARGET_FRAME_RATE,
-					width: TARGET_WIDTH,
-					height: TARGET_HEIGHT,
-					bitrate: computeBitrate(TARGET_WIDTH, TARGET_HEIGHT),
+					// Zero means "use the source's native framebuffer dimensions". The
+					// ScreenCaptureKit helper resolves Retina/5K/6K pixel dimensions and
+					// chooses an adaptive bitrate after it knows the selected source size.
+					width: 0,
+					height: 0,
 					hideSystemCursor: cursorCaptureMode === "editable-overlay",
 				},
 				audio: {

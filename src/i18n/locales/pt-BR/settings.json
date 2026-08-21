@@ -88,9 +88,9 @@
 	},
 	"exportQuality": {
 		"title": "Qualidade de Exportação",
-		"low": "Baixa",
-		"medium": "Média",
-		"high": "Alta"
+		"low": "1080p",
+		"medium": "4K",
+		"high": "Original"
 	},
 	"gifSettings": {
 		"frameRate": "Taxa de Quadros do GIF",

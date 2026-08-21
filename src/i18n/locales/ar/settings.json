@@ -90,9 +90,9 @@
 	},
 	"exportQuality": {
 		"title": "دقة التصدير",
-		"low": "720p",
-		"medium": "1080p",
-		"high": "Source"
+		"low": "1080p",
+		"medium": "4K",
+		"high": "الأصلية"
 	},
 	"gifSettings": {
 		"frameRate": "معدل إطارات GIF",
