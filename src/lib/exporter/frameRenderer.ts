@@ -49,6 +49,7 @@ import {
 	type Size,
 	type StyledRenderRect,
 } from "@/lib/compositeLayout";
+import { getCursorClickBrightness, getCursorImageFilter } from "@/lib/cursor/clickVisuals";
 import { getSmoothedCursorPath } from "@/lib/cursor/cursorPathSmoothing";
 import {
 	createNativeCursorMotionBlurState,
@@ -90,6 +91,7 @@ interface FrameRenderConfig {
 	cursorSmoothing?: number;
 	cursorMotionBlur?: number;
 	cursorClickBounce?: number;
+	cursorClickDarken?: number;
 	cursorClipToBounds?: boolean;
 	cursorTheme?: string;
 	videoWidth: number;
@@ -594,12 +596,17 @@ export class FrameRenderer {
 			this.warnOnce("native-cursor-image-load", "Failed to load native cursor asset", error);
 			return;
 		}
+		const clickProgress = getNativeCursorClickBounceProgress(
+			this.config.cursorRecordingData,
+			timeMs,
+		);
 		const scale =
 			Math.max(0, this.config.cursorScale ?? 1) *
-			getNativeCursorClickBounceScale(
-				this.config.cursorClickBounce ?? 0,
-				getNativeCursorClickBounceProgress(this.config.cursorRecordingData, timeMs),
-			);
+			getNativeCursorClickBounceScale(this.config.cursorClickBounce ?? 0, clickProgress);
+		const clickBrightness = getCursorClickBrightness(
+			this.config.cursorClickDarken ?? 0,
+			clickProgress,
+		);
 		const appliedScale = this.animationState.appliedScale;
 		// Normalize cursor size to the same fraction of video width as the preview;
 		// both paths use maskRect.width / croppedVideoWidth.
@@ -630,9 +637,10 @@ export class FrameRenderer {
 			this.foregroundCtx.clip();
 		}
 		const previousFilter = this.foregroundCtx.filter;
-		if (blurPx > 0) {
-			this.foregroundCtx.filter = `blur(${blurPx.toFixed(2)}px)`;
-		}
+		this.foregroundCtx.filter = getCursorImageFilter({
+			brightness: clickBrightness,
+			blurPx,
+		});
 		this.foregroundCtx.drawImage(
 			image,
 			canvasX - renderAsset.hotspotX * scale * appliedScale * sizeNorm,

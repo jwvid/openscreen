@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { INITIAL_EDITOR_STATE } from "@/hooks/useEditorHistory";
 import { DEFAULT_PREFS } from "@/lib/userPreferences";
 import {
+	DEFAULT_CURSOR_SETTINGS,
 	DEFAULT_EDITOR_APPEARANCE_SETTINGS,
 	DEFAULT_EDITOR_LAYOUT_SETTINGS,
 	DEFAULT_EXPORT_SETTINGS,
@@ -9,6 +10,8 @@ import {
 	DEFAULT_WEBCAM_SETTINGS,
 } from "./editorDefaults";
 import { normalizeProjectEditor } from "./projectPersistence";
+import { DEFAULT_CURSOR_CLICK_DARKEN } from "./types";
+import { DEFAULT_CURSOR_CONFIG } from "./videoPlayback/cursorRenderer";
 
 describe("editor defaults SSOT", () => {
 	it("keeps history defaults aligned with editor defaults", () => {
@@ -32,6 +35,11 @@ describe("editor defaults SSOT", () => {
 			exportQuality: DEFAULT_EXPORT_SETTINGS.quality,
 			exportFormat: DEFAULT_EXPORT_SETTINGS.format,
 		});
+	});
+
+	it("keeps the click darken renderer default aligned with cursor settings", () => {
+		expect(DEFAULT_CURSOR_SETTINGS.clickDarken).toBe(DEFAULT_CURSOR_CLICK_DARKEN);
+		expect(DEFAULT_CURSOR_CONFIG.clickDarken).toBe(DEFAULT_CURSOR_CLICK_DARKEN);
 	});
 
 	it("keeps project fallback normalization aligned with editor defaults", () => {

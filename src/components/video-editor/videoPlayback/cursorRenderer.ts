@@ -1,6 +1,11 @@
 import { Assets, BlurFilter, Container, Graphics, Sprite, Texture } from "pixi.js";
 import { MotionBlurFilter } from "pixi-filters/motion-blur";
-import type { CursorTelemetryPoint } from "../types";
+import {
+	getCursorBrightnessTint,
+	getCursorClickBrightness,
+	getCursorImageFilter,
+} from "@/lib/cursor/clickVisuals";
+import { type CursorTelemetryPoint, DEFAULT_CURSOR_CLICK_DARKEN } from "../types";
 import {
 	createSpringState,
 	getCursorSpringConfig,
@@ -53,6 +58,8 @@ export interface CursorRenderConfig {
 	motionBlur: number;
 	/** Click bounce multiplier. */
 	clickBounce: number;
+	/** Maximum click-time brightness reduction (0-1). */
+	clickDarken: number;
 }
 
 export const DEFAULT_CURSOR_CONFIG: CursorRenderConfig = {
@@ -63,6 +70,7 @@ export const DEFAULT_CURSOR_CONFIG: CursorRenderConfig = {
 	smoothingFactor: 0.18,
 	motionBlur: 0,
 	clickBounce: 1,
+	clickDarken: DEFAULT_CURSOR_CLICK_DARKEN,
 };
 
 const REFERENCE_WIDTH = 1920;
@@ -577,6 +585,10 @@ export class PixiCursorOverlay {
 		this.config.clickBounce = Math.max(0, clickBounce);
 	}
 
+	setClickDarken(clickDarken: number) {
+		this.config.clickDarken = Math.min(1, Math.max(0, clickDarken));
+	}
+
 	update(
 		samples: CursorTelemetryPoint[],
 		timeMs: number,
@@ -628,6 +640,7 @@ export class PixiCursorOverlay {
 			0.72,
 			1 - Math.sin(clickBounceProgress * Math.PI) * (0.08 * this.config.clickBounce),
 		);
+		const clickBrightness = getCursorClickBrightness(this.config.clickDarken, clickBounceProgress);
 		const scaledH = h;
 
 		this.clickRingGraphics.clear();
@@ -653,6 +666,7 @@ export class PixiCursorOverlay {
 
 		if (sprite) {
 			sprite.alpha = this.config.dotAlpha;
+			sprite.tint = getCursorBrightnessTint(clickBrightness);
 			sprite.height = scaledH * bounceScale;
 			sprite.width = scaledH * bounceScale * asset.aspectRatio;
 			sprite.position.set(px, py);
@@ -750,9 +764,13 @@ export function drawCursorOnCanvas(
 		0.72,
 		1 - Math.sin(clickBounceProgress * Math.PI) * (0.08 * config.clickBounce),
 	);
+	const clickBrightness = getCursorClickBrightness(config.clickDarken, clickBounceProgress);
 
 	ctx.save();
-	ctx.filter = CURSOR_SVG_DROP_SHADOW_FILTER;
+	ctx.filter = getCursorImageFilter({
+		brightness: clickBrightness,
+		dropShadow: CURSOR_SVG_DROP_SHADOW_FILTER,
+	});
 
 	const drawHeight = h * bounceScale;
 	const drawWidth = drawHeight * asset.aspectRatio;

@@ -26,6 +26,7 @@ import {
 	type WebcamLayoutPreset,
 	type WebcamSizePreset,
 } from "@/lib/compositeLayout";
+import { getCursorClickBrightness, getCursorImageFilter } from "@/lib/cursor/clickVisuals";
 import { getSmoothedCursorPath } from "@/lib/cursor/cursorPathSmoothing";
 import {
 	createNativeCursorMotionBlurState,
@@ -143,6 +144,7 @@ interface VideoPlaybackProps {
 	cursorSmoothing?: number;
 	cursorMotionBlur?: number;
 	cursorClickBounce?: number;
+	cursorClickDarken?: number;
 	cursorClipToBounds?: boolean;
 	cursorTheme?: string;
 	// Render the selected zoom at the playhead even while paused, so the editor can
@@ -270,6 +272,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			cursorSmoothing = DEFAULT_CURSOR_SETTINGS.smoothing,
 			cursorMotionBlur = DEFAULT_CURSOR_SETTINGS.motionBlur,
 			cursorClickBounce = DEFAULT_CURSOR_SETTINGS.clickBounce,
+			cursorClickDarken = DEFAULT_CURSOR_SETTINGS.clickDarken,
 			cursorClipToBounds = DEFAULT_CURSOR_SETTINGS.clipToBounds,
 			cursorTheme = DEFAULT_CURSOR_SETTINGS.theme,
 			isPreviewingZoom = false,
@@ -350,6 +353,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const cursorSmoothingRef = useRef(cursorSmoothing);
 		const cursorMotionBlurRef = useRef(cursorMotionBlur);
 		const cursorClickBounceRef = useRef(cursorClickBounce);
+		const cursorClickDarkenRef = useRef(cursorClickDarken);
 		const cursorClipToBoundsRef = useRef(cursorClipToBounds);
 		const cursorThemeRef = useRef(cursorTheme);
 		const isPreviewingZoomRef = useRef(isPreviewingZoom);
@@ -840,6 +844,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		}, [cursorClickBounce]);
 
 		useEffect(() => {
+			cursorClickDarkenRef.current = cursorClickDarken;
+		}, [cursorClickDarken]);
+
+		useEffect(() => {
 			cursorClipToBoundsRef.current = cursorClipToBounds;
 		}, [cursorClipToBounds]);
 
@@ -873,8 +881,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			overlay.setSmoothingFactor(cursorSmoothing);
 			overlay.setMotionBlur(cursorMotionBlur);
 			overlay.setClickBounce(cursorClickBounce);
+			overlay.setClickDarken(cursorClickDarken);
 			overlay.reset();
-		}, [cursorSize, cursorSmoothing, cursorMotionBlur, cursorClickBounce]);
+		}, [cursorSize, cursorSmoothing, cursorMotionBlur, cursorClickBounce, cursorClickDarken]);
 
 		useEffect(() => {
 			onTimeUpdateRef.current = onTimeUpdate;
@@ -1043,6 +1052,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 						smoothingFactor: cursorSmoothingRef.current,
 						motionBlur: cursorMotionBlurRef.current,
 						clickBounce: cursorClickBounceRef.current,
+						clickDarken: cursorClickDarkenRef.current,
 					});
 					cursorOverlayRef.current = cursorOverlay;
 				}
@@ -1614,6 +1624,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 								const scale =
 									Math.max(0, cursorSizeRef.current) *
 									getNativeCursorClickBounceScale(cursorClickBounceRef.current, bounceProgress);
+								const clickBrightness = getCursorClickBrightness(
+									cursorClickDarkenRef.current,
+									bounceProgress,
+								);
 								// Normalize cursor size to the displayed video width so the cursor
 								// appears at the same fraction of the video in both preview and export.
 								const crop = cropRegionRef.current ?? { x: 0, y: 0, width: 1, height: 1 };
@@ -1656,8 +1670,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 								}
 								nativeCursorImage.style.width = `${renderAsset.width * transformedScale}px`;
 								nativeCursorImage.style.height = `${renderAsset.height * transformedScale}px`;
-								nativeCursorImage.style.filter =
-									blurPx > 0 ? `blur(${blurPx.toFixed(2)}px)` : "none";
+								nativeCursorImage.style.filter = getCursorImageFilter({
+									brightness: clickBrightness,
+									blurPx,
+								});
 								// translate3d is relative to nativeCursorClipRef (absolute inset-0 = stage origin).
 								// projectedStagePoint.x is the stage-space cursor position, so no offset is needed.
 								nativeCursorImage.style.transform = `translate3d(${

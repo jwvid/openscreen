@@ -32,6 +32,7 @@ import { formatTimePadded } from "../../utils/timeUtils";
 import { AudioLevelMeter } from "../ui/audio-level-meter";
 import { Button } from "../ui/button";
 import { Tooltip } from "../ui/tooltip";
+import { calculateHudOverlaySize } from "./hudOverlayLayout";
 import styles from "./LaunchWindow.module.css";
 import { openSourceSelectorWithPermissionRetry } from "./openSourceSelectorFlow";
 
@@ -41,7 +42,6 @@ const ICON_SIZE = 20;
 const HUD_DEVICE_POPUP_GAP = 28;
 // Horizontal layout: mirrors the `bottom-[68px]` class on the popup element.
 const HUD_DEVICE_POPUP_HORIZONTAL_BOTTOM = 68;
-
 const ICON_CONFIG = {
 	drag: { icon: RxDragHandleDots2, size: ICON_SIZE },
 	monitor: { icon: MdMonitor, size: ICON_SIZE },
@@ -147,6 +147,7 @@ export function LaunchWindow() {
 	const languageMenuPanelRef = useRef<HTMLDivElement | null>(null);
 	const hudBarRef = useRef<HTMLDivElement | null>(null);
 	const deviceSelectorRef = useRef<HTMLDivElement | null>(null);
+	const localePromptRef = useRef<HTMLDivElement | null>(null);
 	// Measured bar height, anchors the popups above the tall vertical tray so they don't overlap it.
 	const [hudBarHeight, setHudBarHeight] = useState(0);
 	const [languageMenuStyle, setLanguageMenuStyle] = useState<{
@@ -308,14 +309,8 @@ export function LaunchWindow() {
 		const barEl = hudBarRef.current;
 		if (!barEl || !window.electronAPI?.setHudOverlaySize) return;
 
-		// Breathing room so the drop shadow isn't clipped. TOP_MARGIN must also exceed the
-		// slack in the bar's `max-h: calc(100vh - 2.5rem)` cap (40px reserved - 20px bottom
-		// gap = 20px) so the window stays tall enough that the cap never engages and adds a scrollbar.
-		const SIDE_MARGIN = 24;
-		const TOP_MARGIN = 24;
-		// Wide enough that the language menu (11rem) never clips, even when the bar is narrow.
-		const MIN_WIDTH = 220;
-
+		// calculateHudOverlaySize reserves breathing room so the drop shadow is not clipped
+		// and the vertical bar's small-screen max-height fallback does not engage prematurely.
 		const viewportHeight = window.innerHeight;
 		const centerX = window.innerWidth / 2;
 
@@ -348,13 +343,27 @@ export function LaunchWindow() {
 			halfWidth = Math.max(halfWidth, centerX - rect.left, rect.right - centerX);
 		}
 
+		// The first-run locale prompt is fixed to the top of the transparent HUD window.
+		// Add its rendered height above the tallest bottom-anchored content; otherwise
+		// localized copy can wrap beyond the default 160px window and hide the buttons.
+		let topNotice: { width: number; height: number } | null = null;
+		if (localePromptRef.current) {
+			const rect = localePromptRef.current.getBoundingClientRect();
+			if (rect.width !== 0 || rect.height !== 0) {
+				topNotice = { width: rect.width, height: rect.height };
+			}
+		}
+
 		setHudBarHeight((prev) => {
 			const next = Math.round(barEl.scrollHeight);
 			return Math.abs(prev - next) > 1 ? next : prev;
 		});
 
-		const width = Math.max(MIN_WIDTH, Math.ceil(halfWidth * 2) + SIDE_MARGIN);
-		const height = Math.ceil(topFromBottom) + TOP_MARGIN;
+		const { width, height } = calculateHudOverlaySize({
+			topFromBottom,
+			halfWidth,
+			topNotice,
+		});
 		if (width === lastHudSizeRef.current.width && height === lastHudSizeRef.current.height) {
 			return;
 		}
@@ -370,6 +379,7 @@ export function LaunchWindow() {
 		hudResizeObserverRef.current = observer;
 		if (hudBarRef.current) observer.observe(hudBarRef.current);
 		if (deviceSelectorRef.current) observer.observe(deviceSelectorRef.current);
+		if (localePromptRef.current) observer.observe(localePromptRef.current);
 		measureHudSize();
 		return () => {
 			observer.disconnect();
@@ -397,6 +407,10 @@ export function LaunchWindow() {
 	);
 	const setLanguageMenuPanelEl = useCallback(
 		(el: HTMLDivElement | null) => observeHudElement(el, languageMenuPanelRef),
+		[observeHudElement],
+	);
+	const setLocalePromptEl = useCallback(
+		(el: HTMLDivElement | null) => observeHudElement(el, localePromptRef),
 		[observeHudElement],
 	);
 
@@ -518,24 +532,27 @@ export function LaunchWindow() {
 		>
 			{systemLocaleSuggestion && (
 				<div
+					ref={setLocalePromptEl}
 					data-hud-interactive="true"
-					className={`fixed top-8 left-1/2 z-30 w-[calc(100vw-1rem)] max-w-[520px] -translate-x-1/2 rounded-xl border border-white/15 bg-[rgba(20,20,28,0.95)] p-3 shadow-2xl backdrop-blur-xl text-white animate-in fade-in-0 zoom-in-95 duration-200 ${styles.electronNoDrag}`}
+					className={`fixed top-2 left-1/2 z-30 flex max-h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-[520px] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-white/15 bg-[rgba(20,20,28,0.95)] p-3 text-white shadow-2xl backdrop-blur-xl animate-in fade-in-0 zoom-in-95 duration-200 ${styles.electronNoDrag}`}
 				>
-					<div className="text-[13px] font-semibold text-white">
-						{t("systemLanguagePrompt.title")}
+					<div className="min-h-0 overflow-y-auto overscroll-contain pr-1">
+						<div className="text-[13px] font-semibold text-white">
+							{t("systemLanguagePrompt.title")}
+						</div>
+						<div className="mt-1 text-[11px] leading-relaxed text-white/75">
+							{t("systemLanguagePrompt.description", {
+								language: suggestedLanguageName,
+							})}
+						</div>
 					</div>
-					<div className="mt-1 text-[11px] leading-relaxed text-white/75">
-						{t("systemLanguagePrompt.description", {
-							language: suggestedLanguageName,
-						})}
-					</div>
-					<div className="mt-3 flex items-center justify-end gap-2">
+					<div className="mt-3 flex shrink-0 flex-wrap items-center justify-end gap-2">
 						<Button
 							type="button"
 							variant="ghost"
 							size="sm"
 							onClick={dismissSystemLocaleSuggestion}
-							className="h-7 text-xs text-white/80 hover:bg-white/10 hover:text-white"
+							className="h-auto min-h-7 max-w-full whitespace-normal px-3 py-1 text-center text-xs text-white/80 hover:bg-white/10 hover:text-white"
 						>
 							{t("systemLanguagePrompt.keepDefault")}
 						</Button>
@@ -543,7 +560,7 @@ export function LaunchWindow() {
 							type="button"
 							size="sm"
 							onClick={acceptSystemLocaleSuggestion}
-							className="h-7 text-xs bg-white text-[#10121b] hover:bg-white/90"
+							className="h-auto min-h-7 max-w-full whitespace-normal px-3 py-1 text-center text-xs bg-white text-[#10121b] hover:bg-white/90"
 						>
 							{t("systemLanguagePrompt.switch", {
 								language: suggestedLanguageName,

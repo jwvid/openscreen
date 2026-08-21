@@ -215,6 +215,7 @@
 		"smoothing": "Smussatura",
 		"motionBlur": "Sfocatura movimento",
 		"clickBounce": "Rimbalzo clic",
+		"clickDarken": "Oscuramento al clic",
 		"clipToBounds": "Ritaglia al canvas"
 	},
 	"language": {

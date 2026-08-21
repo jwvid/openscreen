@@ -207,6 +207,7 @@
 		"smoothing": "Yumuşatma",
 		"motionBlur": "Hareket Bulanıklığı",
 		"clickBounce": "Tıklama Sıçraması",
+		"clickDarken": "Tıklama karartması",
 		"clipToBounds": "Tuvale Kırp"
 	},
 	"language": {

@@ -39,7 +39,7 @@ Screen Studio is an awesome product and this is definitely not a 1:1 clone. If y
 - Record microphone and system audio.
 - Webcam overlay with picture-in-picture, drag-to-position, mirroring, and shape options.
 - Auto or manual zooms with adjustable depth, duration, easing, and pixel-precise position; auto-zoom follows your cursor as you work.
-- Custom cursor size, smoothing, and click effects, with cursor themes and post-recording path smoothing.
+- Custom cursor size, smoothing, click bounce, and click darkening, with cursor themes and post-recording path smoothing.
 - Automatic captions for voiceovers, generated on-device with no upload (works offline).
 - Wallpapers, solid colors, gradients, or your own background image.
 - Motion blur.

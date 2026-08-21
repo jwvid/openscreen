@@ -216,6 +216,7 @@
 		"smoothing": "スムージング",
 		"motionBlur": "モーションブラー",
 		"clickBounce": "クリックバウンス",
+		"clickDarken": "クリック時の暗さ",
 		"clipToBounds": "キャンバスにクリップ"
 	},
 	"language": {

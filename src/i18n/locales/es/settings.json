@@ -216,6 +216,7 @@
 		"smoothing": "Suavizado",
 		"motionBlur": "Desenfoque de movimiento",
 		"clickBounce": "Rebote al clic",
+		"clickDarken": "Oscurecer al hacer clic",
 		"clipToBounds": "Recortar al lienzo"
 	},
 	"language": {
