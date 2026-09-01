@@ -18,6 +18,7 @@ import {
 	Trash2,
 	Unlock,
 	Upload,
+	Volume2,
 	X,
 } from "lucide-react";
 import { type ComponentType, useCallback, useMemo, useRef, useState } from "react";
@@ -287,6 +288,8 @@ interface SettingsPanelProps {
 	// Export format settings
 	exportFormat?: ExportFormat;
 	onExportFormatChange?: (format: ExportFormat) => void;
+	includeCursorSounds?: boolean;
+	onIncludeCursorSoundsChange?: (include: boolean) => void;
 	gifFrameRate?: GifFrameRate;
 	onGifFrameRateChange?: (rate: GifFrameRate) => void;
 	gifLoop?: boolean;
@@ -429,6 +432,8 @@ export function SettingsPanel({
 	onExportQualityChange,
 	exportFormat = DEFAULT_EXPORT_SETTINGS.format,
 	onExportFormatChange,
+	includeCursorSounds = DEFAULT_EXPORT_SETTINGS.includeCursorSounds,
+	onIncludeCursorSoundsChange,
 	gifFrameRate = DEFAULT_GIF_SETTINGS.frameRate,
 	onGifFrameRateChange,
 	gifLoop = DEFAULT_GIF_SETTINGS.loop,
@@ -2048,7 +2053,7 @@ export function SettingsPanel({
 						</div>
 
 						{exportFormat === "mp4" && (
-							<div className="mb-3 space-y-1.5">
+							<div className="mb-3 space-y-2">
 								{sourceDimensions && (
 									<div className="flex items-center justify-between px-0.5 text-[10px] leading-none text-slate-500">
 										<span>{t("exportQuality.title")}</span>
@@ -2123,6 +2128,33 @@ export function SettingsPanel({
 											</span>
 										)}
 									</button>
+								</div>
+								<div
+									className={cn(
+										"flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/5 px-2.5 py-2",
+										!hasCursorData && "opacity-50",
+									)}
+								>
+									<div className="flex min-w-0 items-center gap-2">
+										<Volume2 className="h-3.5 w-3.5 flex-none text-[#34B27B]" />
+										<div className="min-w-0">
+											<p className="text-[10px] font-medium text-slate-200">
+												{t("export.cursorSounds")}
+											</p>
+											<p className="truncate text-[9px] text-slate-500">
+												{hasCursorData
+													? t("export.cursorSoundsDescription")
+													: t("export.cursorSoundsUnavailable")}
+											</p>
+										</div>
+									</div>
+									<Switch
+										data-testid={getTestId("cursor-sounds-switch")}
+										checked={includeCursorSounds && hasCursorData}
+										disabled={!hasCursorData}
+										onCheckedChange={onIncludeCursorSoundsChange}
+										className="scale-75 data-[state=checked]:bg-[#34B27B]"
+									/>
 								</div>
 							</div>
 						)}

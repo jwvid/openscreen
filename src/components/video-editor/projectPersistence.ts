@@ -88,6 +88,7 @@ export interface ProjectEditorState {
 	webcamPosition: WebcamPosition | null;
 	exportQuality: ExportQuality;
 	exportFormat: ExportFormat;
+	includeCursorSounds: boolean;
 	gifFrameRate: GifFrameRate;
 	gifLoop: boolean;
 	gifSizePreset: GifSizePreset;
@@ -516,6 +517,10 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				? editor.exportQuality
 				: DEFAULT_EXPORT_SETTINGS.quality,
 		exportFormat: editor.exportFormat === "gif" ? "gif" : DEFAULT_EXPORT_SETTINGS.format,
+		includeCursorSounds:
+			typeof editor.includeCursorSounds === "boolean"
+				? editor.includeCursorSounds
+				: DEFAULT_EXPORT_SETTINGS.includeCursorSounds,
 		gifFrameRate:
 			editor.gifFrameRate === 15 ||
 			editor.gifFrameRate === 20 ||

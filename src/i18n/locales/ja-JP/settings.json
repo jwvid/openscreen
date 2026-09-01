@@ -107,7 +107,10 @@
 	"export": {
 		"videoButton": "動画をエクスポート",
 		"gifButton": "GIF をエクスポート",
-		"chooseSaveLocation": "保存場所を選択"
+		"chooseSaveLocation": "保存場所を選択",
+		"cursorSounds": "マウスクリック音",
+		"cursorSoundsDescription": "クリックとドラッグを別の音声トラックに追加",
+		"cursorSoundsUnavailable": "この録画にはマウスクリックデータがありません"
 	},
 	"support": {
 		"reportBug": "バグを報告",

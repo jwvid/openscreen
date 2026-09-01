@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
+import { useCursorSoundPreview } from "@/hooks/useCursorSoundPreview";
 import { INITIAL_EDITOR_STATE, useEditorHistory } from "@/hooks/useEditorHistory";
 import { type Locale } from "@/i18n/config";
 import { getAvailableLocales, getLocaleName } from "@/i18n/loader";
@@ -34,6 +35,7 @@ import {
 	transcribeMono16kToSegments,
 	trimLeadingSilenceMono16k,
 } from "@/lib/captioning";
+import { deriveCursorSoundEvents } from "@/lib/cursor/cursorSounds";
 import { hasNativeCursorRecordingData } from "@/lib/cursor/nativeCursor";
 import {
 	calculateEffectiveSourceDimensions,
@@ -227,7 +229,11 @@ export default function VideoEditor() {
 	currentTimeRef.current = currentTime;
 	const durationRef = useRef(duration);
 	durationRef.current = duration;
-	const [selectedZoomId, setSelectedZoomId] = useState<string | null>(null);
+	const [selectedZoomIds, setSelectedZoomIds] = useState<string[]>([]);
+	const selectedZoomId = selectedZoomIds.at(-1) ?? null;
+	const setSelectedZoomId = useCallback((id: string | null) => {
+		setSelectedZoomIds(id ? [id] : []);
+	}, []);
 	const [isPreviewingZoom, setIsPreviewingZoom] = useState(false);
 	const [selectedTrimId, setSelectedTrimId] = useState<string | null>(null);
 	const [selectedSpeedId, setSelectedSpeedId] = useState<string | null>(null);
@@ -242,6 +248,9 @@ export default function VideoEditor() {
 		DEFAULT_EXPORT_SETTINGS.quality,
 	);
 	const [exportFormat, setExportFormat] = useState<ExportFormat>(DEFAULT_EXPORT_SETTINGS.format);
+	const [includeCursorSounds, setIncludeCursorSounds] = useState(
+		DEFAULT_EXPORT_SETTINGS.includeCursorSounds,
+	);
 	const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(DEFAULT_GIF_SETTINGS.frameRate);
 	const [gifLoop, setGifLoop] = useState(DEFAULT_GIF_SETTINGS.loop);
 	const [gifSizePreset, setGifSizePreset] = useState<GifSizePreset>(
@@ -280,6 +289,10 @@ export default function VideoEditor() {
 			.filter((sample) => isClickInteractionType(sample.interactionType))
 			.map((sample) => sample.timeMs);
 	}, [cursorRecordingData, cursorTelemetry]);
+	const cursorSoundEvents = useMemo(() => {
+		const nativeEvents = deriveCursorSoundEvents(cursorRecordingData?.samples);
+		return nativeEvents.length > 0 ? nativeEvents : deriveCursorSoundEvents(cursorTelemetry);
+	}, [cursorRecordingData, cursorTelemetry]);
 
 	// Cursor & motion blur visual settings (non-undoable preferences)
 	const [showCursor, setShowCursor] = useState(DEFAULT_CURSOR_SETTINGS.show);
@@ -297,6 +310,15 @@ export default function VideoEditor() {
 		useState<CursorCaptureMode | null>(null);
 
 	const videoPlaybackRef = useRef<VideoPlaybackRef>(null);
+	useCursorSoundPreview({
+		enabled: includeCursorSounds,
+		isPlaying,
+		currentTimeMs: currentTime * 1000,
+		playbackRate: videoPlaybackRef.current?.video?.playbackRate ?? 1,
+		events: cursorSoundEvents,
+		trimRegions,
+		sourceKey: cursorTelemetrySourcePath,
+	});
 
 	const nextZoomIdRef = useRef(1);
 	const nextTrimIdRef = useRef(1);
@@ -425,6 +447,7 @@ export default function VideoEditor() {
 			});
 			setExportQuality(normalizedEditor.exportQuality);
 			setExportFormat(normalizedEditor.exportFormat);
+			setIncludeCursorSounds(normalizedEditor.includeCursorSounds);
 			setGifFrameRate(normalizedEditor.gifFrameRate);
 			setGifLoop(normalizedEditor.gifLoop);
 			setGifSizePreset(normalizedEditor.gifSizePreset);
@@ -501,6 +524,7 @@ export default function VideoEditor() {
 			webcamPosition,
 			exportQuality,
 			exportFormat,
+			includeCursorSounds,
 			gifFrameRate,
 			gifLoop,
 			gifSizePreset,
@@ -532,6 +556,7 @@ export default function VideoEditor() {
 		webcamPosition,
 		exportQuality,
 		exportFormat,
+		includeCursorSounds,
 		gifFrameRate,
 		gifLoop,
 		gifSizePreset,
@@ -615,14 +640,21 @@ export default function VideoEditor() {
 		});
 		setExportQuality(prefs.exportQuality);
 		setExportFormat(prefs.exportFormat);
+		setIncludeCursorSounds(prefs.includeCursorSounds);
 		setPrefsHydrated(true);
 	}, [updateState]);
 
 	// Auto-save user preferences when settings change
 	useEffect(() => {
 		if (!prefsHydrated) return;
-		saveUserPreferences({ padding, aspectRatio, exportQuality, exportFormat });
-	}, [prefsHydrated, padding, aspectRatio, exportQuality, exportFormat]);
+		saveUserPreferences({
+			padding,
+			aspectRatio,
+			exportQuality,
+			exportFormat,
+			includeCursorSounds,
+		});
+	}, [prefsHydrated, padding, aspectRatio, exportQuality, exportFormat, includeCursorSounds]);
 
 	const saveProject = useCallback(
 		async (forceSaveAs: boolean) => {
@@ -660,6 +692,7 @@ export default function VideoEditor() {
 				webcamPosition,
 				exportQuality,
 				exportFormat,
+				includeCursorSounds,
 				gifFrameRate,
 				gifLoop,
 				gifSizePreset,
@@ -725,6 +758,7 @@ export default function VideoEditor() {
 			webcamPosition,
 			exportQuality,
 			exportFormat,
+			includeCursorSounds,
 			gifFrameRate,
 			gifLoop,
 			gifSizePreset,
@@ -973,15 +1007,20 @@ export default function VideoEditor() {
 		video.currentTime = time;
 	}
 
-	const handleSelectZoom = useCallback((id: string | null) => {
-		setSelectedZoomId(id);
-		if (id) {
+	const handleSelectZooms = useCallback((ids: string[]) => {
+		setSelectedZoomIds([...new Set(ids)]);
+		if (ids.length > 0) {
 			setSelectedTrimId(null);
 			setSelectedSpeedId(null);
 			setSelectedAnnotationId(null);
 			setSelectedBlurId(null);
 		}
 	}, []);
+
+	const handleSelectZoom = useCallback(
+		(id: string | null) => handleSelectZooms(id ? [id] : []),
+		[handleSelectZooms],
+	);
 
 	const handleSelectTrim = useCallback((id: string | null) => {
 		setSelectedTrimId(id);
@@ -1242,16 +1281,25 @@ export default function VideoEditor() {
 		[selectedZoomId, pushState],
 	);
 
+	const handleZoomDeleteMany = useCallback(
+		(ids: string[]) => {
+			if (ids.length === 0) return;
+			const deleteIds = new Set(ids);
+			pushState((prev) => ({
+				zoomRegions: prev.zoomRegions.filter((region) => !deleteIds.has(region.id)),
+			}));
+			setSelectedZoomIds((current) => current.filter((id) => !deleteIds.has(id)));
+		},
+		[pushState],
+	);
+
 	const handleZoomDelete = useCallback(
 		(id: string) => {
-			pushState((prev) => ({
-				zoomRegions: prev.zoomRegions.filter((r) => r.id !== id),
-			}));
-			if (selectedZoomId === id) {
-				setSelectedZoomId(null);
-			}
+			const ids =
+				selectedZoomIds.length > 1 && selectedZoomIds.includes(id) ? selectedZoomIds : [id];
+			handleZoomDeleteMany(ids);
 		},
-		[selectedZoomId, pushState],
+		[handleZoomDeleteMany, selectedZoomIds],
 	);
 
 	const handleZoomRotationPresetChange = useCallback(
@@ -1720,10 +1768,12 @@ export default function VideoEditor() {
 	}, [undo, redo, shortcuts, isMac]);
 
 	useEffect(() => {
-		if (selectedZoomId && !zoomRegions.some((region) => region.id === selectedZoomId)) {
-			setSelectedZoomId(null);
-		}
-	}, [selectedZoomId, zoomRegions]);
+		const availableIds = new Set(zoomRegions.map((region) => region.id));
+		setSelectedZoomIds((current) => {
+			const next = current.filter((id) => availableIds.has(id));
+			return next.length === current.length ? current : next;
+		});
+	}, [zoomRegions]);
 
 	useEffect(() => {
 		if (selectedTrimId && !trimRegions.some((region) => region.id === selectedTrimId)) {
@@ -1983,6 +2033,7 @@ export default function VideoEditor() {
 
 					const exporter = new VideoExporter({
 						videoUrl: videoPath,
+						outputPath: targetPath,
 						webcamVideoUrl: webcamVideoPath || undefined,
 						width: exportWidth,
 						height: exportHeight,
@@ -2019,6 +2070,7 @@ export default function VideoEditor() {
 						previewHeight,
 						cursorTelemetry,
 						cursorClickTimestamps,
+						includeCursorSounds: settings.includeCursorSounds ?? includeCursorSounds,
 						onProgress: (progress: ExportProgress) => {
 							setExportProgress(progress);
 						},
@@ -2027,28 +2079,35 @@ export default function VideoEditor() {
 					exporterRef.current = exporter;
 					const result = await exporter.export();
 
-					if (result.success && result.blob) {
-						const arrayBuffer = await result.blob.arrayBuffer();
-
+					if (result.success && (result.path || result.blob)) {
 						if (result.warnings) {
 							for (const warning of result.warnings) {
 								toast.warning(warning);
 							}
 						}
 
-						const saveResult = await window.electronAPI.writeExportToPath(arrayBuffer, targetPath);
-
-						if (saveResult.success && saveResult.path) {
+						if (result.path) {
 							setUnsavedExport(null);
-							handleExportSaved("Video", saveResult.path);
-						} else {
-							setUnsavedExport({ arrayBuffer, fileName: targetFileName, format: "mp4" });
-							const message = buildSaveDiagnosticMessage(
-								"Video",
-								saveResult.message || "Failed to save video",
+							handleExportSaved("Video", result.path);
+						} else if (result.blob) {
+							const arrayBuffer = await result.blob.arrayBuffer();
+							const saveResult = await window.electronAPI.writeExportToPath(
+								arrayBuffer,
+								targetPath,
 							);
-							setExportError(message);
-							toast.error(message);
+
+							if (saveResult.success && saveResult.path) {
+								setUnsavedExport(null);
+								handleExportSaved("Video", saveResult.path);
+							} else {
+								setUnsavedExport({ arrayBuffer, fileName: targetFileName, format: "mp4" });
+								const message = buildSaveDiagnosticMessage(
+									"Video",
+									saveResult.message || "Failed to save video",
+								);
+								setExportError(message);
+								toast.error(message);
+							}
 						}
 					} else {
 						const message = buildExportDiagnosticMessage({
@@ -2119,6 +2178,7 @@ export default function VideoEditor() {
 			webcamSizePreset,
 			webcamPosition,
 			exportQuality,
+			includeCursorSounds,
 			handleExportSaved,
 			cursorTelemetry,
 			cursorClickTimestamps,
@@ -2169,6 +2229,7 @@ export default function VideoEditor() {
 		const settings: ExportSettings = {
 			format: exportFormat,
 			quality: exportFormat === "mp4" ? exportQuality : undefined,
+			includeCursorSounds: exportFormat === "mp4" ? includeCursorSounds : undefined,
 			gifConfig:
 				exportFormat === "gif"
 					? {
@@ -2191,6 +2252,7 @@ export default function VideoEditor() {
 		videoPath,
 		exportFormat,
 		exportQuality,
+		includeCursorSounds,
 		gifFrameRate,
 		gifLoop,
 		gifSizePreset,
@@ -2763,6 +2825,8 @@ export default function VideoEditor() {
 										onExportQualityChange={setExportQuality}
 										exportFormat={exportFormat}
 										onExportFormatChange={setExportFormat}
+										includeCursorSounds={includeCursorSounds}
+										onIncludeCursorSoundsChange={setIncludeCursorSounds}
 										gifFrameRate={gifFrameRate}
 										onGifFrameRateChange={setGifFrameRate}
 										gifLoop={gifLoop}
@@ -2871,8 +2935,11 @@ export default function VideoEditor() {
 									onToggleAutoFocusAll={handleToggleAutoFocusAll}
 									onZoomSpanChange={handleZoomSpanChange}
 									onZoomDelete={handleZoomDelete}
+									onZoomDeleteMany={handleZoomDeleteMany}
 									selectedZoomId={selectedZoomId}
+									selectedZoomIds={selectedZoomIds}
 									onSelectZoom={handleSelectZoom}
+									onSelectZooms={handleSelectZooms}
 									trimRegions={trimRegions}
 									onTrimAdded={handleTrimAdded}
 									onTrimSpanChange={handleTrimSpanChange}

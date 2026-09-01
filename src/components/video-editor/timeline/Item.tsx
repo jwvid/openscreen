@@ -12,7 +12,7 @@ interface ItemProps {
 	rowId: string;
 	children: React.ReactNode;
 	isSelected?: boolean;
-	onSelect?: () => void;
+	onSelect?: (event: React.PointerEvent<HTMLDivElement>) => void;
 	zoomDepth?: number;
 	zoomCustomScale?: number;
 	speedValue?: number;
@@ -90,7 +90,7 @@ export default function Item({
 			style={safeItemStyle}
 			{...listeners}
 			{...attributes}
-			onPointerDownCapture={() => onSelect?.()}
+			onPointerDownCapture={(event) => onSelect?.(event)}
 			className="group"
 		>
 			<div style={{ ...itemContentStyle, minWidth: 24 }}>
@@ -103,7 +103,6 @@ export default function Item({
 					style={{ height: 30, color: "#fff", minWidth: 24 }}
 					onClick={(event) => {
 						event.stopPropagation();
-						onSelect?.();
 					}}
 				>
 					<div

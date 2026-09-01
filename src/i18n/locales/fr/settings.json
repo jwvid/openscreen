@@ -107,7 +107,10 @@
 	"export": {
 		"videoButton": "Exporter la vidéo",
 		"gifButton": "Exporter le GIF",
-		"chooseSaveLocation": "Choisir l'emplacement d'enregistrement"
+		"chooseSaveLocation": "Choisir l'emplacement d'enregistrement",
+		"cursorSounds": "Sons des clics de souris",
+		"cursorSoundsDescription": "Clics et glissements sur une piste audio séparée",
+		"cursorSoundsUnavailable": "Cet enregistrement ne contient aucun clic de souris"
 	},
 	"support": {
 		"reportBug": "Signaler un bug",

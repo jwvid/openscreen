@@ -65,6 +65,7 @@ import { BackgroundLoadError, classifyWallpaper, resolveImageWallpaperUrl } from
 import { drawCanvasClipPath } from "@/lib/webcamMaskShapes";
 import type { CursorRecordingData } from "@/native/contracts";
 import { renderAnnotations } from "./annotationRenderer";
+import { isDirectCursorRenderEligible } from "./frameRenderMode";
 import {
 	getLinearGradientPoints,
 	getRadialGradientShape,
@@ -74,7 +75,7 @@ import {
 import { createThreeDPass, type ThreeDPass } from "./threeDPass";
 import { drawWebcamFrameImage } from "./webcamFrameDrawing";
 
-interface FrameRenderConfig {
+export interface FrameRenderConfig {
 	width: number;
 	height: number;
 	wallpaper: string;
@@ -151,6 +152,7 @@ export class FrameRenderer {
 	private foregroundCtx: CanvasRenderingContext2D | null = null;
 	private rasterCanvas: HTMLCanvasElement | null = null;
 	private rasterCtx: CanvasRenderingContext2D | null = null;
+	private layoutHasWebcam: boolean | null = null;
 	private threeDPass: ThreeDPass | null = null;
 	private currentRotation3D: Rotation3D = { ...DEFAULT_ROTATION_3D };
 	private cursorImageCache = new Map<string, HTMLImageElement>();
@@ -166,10 +168,12 @@ export class FrameRenderer {
 	private zoomSpringState = createZoomSpringState();
 	private prevTargetProgress = 0;
 	private isLinux = false;
+	private directCursorRender = false;
 
 	constructor(config: FrameRenderConfig) {
 		this.config = config;
 		this.isLinux = config.platform === "linux";
+		this.directCursorRender = isDirectCursorRenderEligible(config);
 		this.animationState = {
 			scale: 1,
 			focusX: DEFAULT_FOCUS.cx,
@@ -182,6 +186,30 @@ export class FrameRenderer {
 	}
 
 	async initialize(): Promise<void> {
+		if (this.directCursorRender) {
+			this.compositeCanvas = document.createElement("canvas");
+			this.compositeCanvas.width = this.config.width;
+			this.compositeCanvas.height = this.config.height;
+			this.compositeCtx = this.compositeCanvas.getContext("2d");
+			if (!this.compositeCtx) {
+				throw new Error("Failed to get 2D context for direct cursor renderer");
+			}
+			// Cursor drawing normally targets a transparent foreground canvas. In the
+			// direct path the source frame is already the foreground, so draw onto it.
+			this.foregroundCanvas = this.compositeCanvas;
+			this.foregroundCtx = this.compositeCtx;
+			this.layoutCache = {
+				stageSize: { width: this.config.width, height: this.config.height },
+				videoSize: { width: this.config.videoWidth, height: this.config.videoHeight },
+				baseScale: 1,
+				baseOffset: { x: 0, y: 0 },
+				maskRect: { x: 0, y: 0, width: this.config.width, height: this.config.height },
+				maskBorderRadius: 0,
+				webcamRect: null,
+			};
+			return;
+		}
+
 		const canvas = document.createElement("canvas");
 		canvas.width = this.config.width;
 		canvas.height = this.config.height;
@@ -370,7 +398,23 @@ export class FrameRenderer {
 			bgCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 		}
 
-		this.backgroundSprite = bgCanvas;
+		if (this.config.showBlur) {
+			// The wallpaper never changes during export. Applying the same full-frame
+			// Canvas blur for every video frame wastes most of a 4K render pass, so
+			// rasterize it once with the exact filter used by the old per-frame path.
+			const blurredCanvas = document.createElement("canvas");
+			blurredCanvas.width = this.config.width;
+			blurredCanvas.height = this.config.height;
+			const blurredCtx = blurredCanvas.getContext("2d");
+			if (!blurredCtx) {
+				throw new Error("Failed to get 2D context for blurred background canvas");
+			}
+			blurredCtx.filter = "blur(6px)";
+			blurredCtx.drawImage(bgCanvas, 0, 0, this.config.width, this.config.height);
+			this.backgroundSprite = blurredCanvas;
+		} else {
+			this.backgroundSprite = bgCanvas;
+		}
 	}
 
 	async renderFrame(
@@ -378,6 +422,23 @@ export class FrameRenderer {
 		timestamp: number,
 		webcamFrame?: VideoFrame | null,
 	): Promise<void> {
+		if (this.directCursorRender) {
+			if (!this.compositeCanvas || !this.compositeCtx) {
+				throw new Error("Renderer not initialized");
+			}
+			this.currentVideoTime = timestamp / 1_000_000;
+			this.compositeCtx.clearRect(0, 0, this.config.width, this.config.height);
+			this.compositeCtx.drawImage(
+				videoFrame as unknown as CanvasImageSource,
+				0,
+				0,
+				this.config.width,
+				this.config.height,
+			);
+			await this.drawNativeCursor(this.currentVideoTime * 1000);
+			return;
+		}
+
 		if (!this.app || !this.videoContainer || !this.cameraContainer) {
 			throw new Error("Renderer not initialized");
 		}
@@ -679,6 +740,10 @@ export class FrameRenderer {
 
 	private updateLayout(webcamFrame?: VideoFrame | null): void {
 		if (!this.app || !this.videoSprite || !this.maskGraphics || !this.videoContainer) return;
+		const hasWebcam = Boolean(webcamFrame && this.config.webcamSize);
+		if (this.layoutCache && this.layoutHasWebcam === hasWebcam) {
+			return;
+		}
 
 		const { width, height } = this.config;
 		const { cropRegion, borderRadius = 0, padding = 0 } = this.config;
@@ -703,13 +768,14 @@ export class FrameRenderer {
 			canvasSize: { width, height },
 			maxContentSize: { width: viewportWidth, height: viewportHeight },
 			screenSize: { width: croppedVideoWidth, height: croppedVideoHeight },
-			webcamSize: webcamFrame ? this.config.webcamSize : null,
+			webcamSize: hasWebcam ? this.config.webcamSize : null,
 			layoutPreset: this.config.webcamLayoutPreset,
 			webcamSizePreset: this.config.webcamSizePreset,
 			webcamPosition: this.config.webcamPosition,
 			webcamMaskShape: this.config.webcamMaskShape,
 		});
 		if (!compositeLayout) return;
+		this.layoutHasWebcam = hasWebcam;
 
 		const screenRect = compositeLayout.screenRect;
 
@@ -981,15 +1047,7 @@ export class FrameRenderer {
 		// 3D rotation pass, matching the preview.
 		bgCtx.clearRect(0, 0, w, h);
 		if (this.backgroundSprite) {
-			const bgCanvas = this.backgroundSprite;
-			if (this.config.showBlur) {
-				bgCtx.save();
-				bgCtx.filter = "blur(6px)"; // Canvas blur is weaker than CSS
-				bgCtx.drawImage(bgCanvas, 0, 0, w, h);
-				bgCtx.restore();
-			} else {
-				bgCtx.drawImage(bgCanvas, 0, 0, w, h);
-			}
+			bgCtx.drawImage(this.backgroundSprite, 0, 0, w, h);
 		} else {
 			console.warn("[FrameRenderer] No background sprite found during compositing!");
 		}
@@ -1112,6 +1170,10 @@ export class FrameRenderer {
 		return this.compositeCanvas;
 	}
 
+	getRenderMode(): "direct-cursor" | "composited" {
+		return this.directCursorRender ? "direct-cursor" : "composited";
+	}
+
 	destroy(): void {
 		if (this.videoSprite) {
 			this.videoSprite.destroy();
@@ -1139,6 +1201,7 @@ export class FrameRenderer {
 		this.foregroundCtx = null;
 		this.rasterCanvas = null;
 		this.rasterCtx = null;
+		this.layoutHasWebcam = null;
 		if (this.threeDPass) {
 			this.threeDPass.destroy();
 			this.threeDPass = null;

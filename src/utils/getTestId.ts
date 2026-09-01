@@ -1,5 +1,6 @@
 export type TestId =
 	| `gif-size-button-${string}`
+	| "cursor-sounds-switch"
 	| "export-button"
 	| "export-panel-button"
 	| "gif-format-button"

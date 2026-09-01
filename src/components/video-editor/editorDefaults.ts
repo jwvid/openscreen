@@ -83,9 +83,11 @@ export const DEFAULT_CURSOR_SETTINGS: CursorVisualSettings & { show: boolean; th
 export const DEFAULT_EXPORT_SETTINGS: {
 	quality: ExportQuality;
 	format: ExportFormat;
+	includeCursorSounds: boolean;
 } = {
 	quality: "good",
 	format: "mp4",
+	includeCursorSounds: true,
 };
 
 export const DEFAULT_GIF_SETTINGS: {

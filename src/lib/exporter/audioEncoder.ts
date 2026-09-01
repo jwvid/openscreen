@@ -1,6 +1,6 @@
 import { WebDemuxer } from "web-demuxer";
 import type { SpeedRegion, TrimRegion } from "@/components/video-editor/types";
-import type { ExportAudioMuxerCodec, VideoMuxer } from "./muxer";
+import type { ExportAudioMuxerCodec, ExportAudioTrackId, VideoMuxer } from "./muxer";
 
 const AUDIO_BITRATE = 128_000;
 const DECODE_BACKPRESSURE_LIMIT = 20;
@@ -216,6 +216,7 @@ export class AudioProcessor {
 	async process(
 		demuxer: WebDemuxer,
 		muxer: VideoMuxer,
+		trackId: ExportAudioTrackId,
 		videoUrl: string,
 		trimRegions: TrimRegion[] | undefined,
 		speedRegions: SpeedRegion[] | undefined,
@@ -238,7 +239,7 @@ export class AudioProcessor {
 				validatedDurationSec,
 			);
 			if (!this.cancelled && renderedAudioBlob.size > 0) {
-				await this.muxRenderedAudioBlob(renderedAudioBlob, muxer, exportCodec);
+				await this.muxRenderedAudioBlob(renderedAudioBlob, muxer, trackId, exportCodec);
 				return;
 			}
 			return;
@@ -248,13 +249,14 @@ export class AudioProcessor {
 		// streamingDecoder.decodeAll's read window so both paths read the same distance past
 		// the validated duration boundary.
 		const readEndSec = validatedDurationSec + 0.5;
-		await this.processTrimOnlyAudio(demuxer, muxer, sortedTrims, readEndSec, exportCodec);
+		await this.processTrimOnlyAudio(demuxer, muxer, trackId, sortedTrims, readEndSec, exportCodec);
 	}
 
 	// Trim-only path, used for projects without speed regions.
 	private async processTrimOnlyAudio(
 		demuxer: WebDemuxer,
 		muxer: VideoMuxer,
+		trackId: ExportAudioTrackId,
 		sortedTrims: TrimRegion[],
 		readEndSec?: number,
 		exportCodec?: ExportAudioCodec,
@@ -393,7 +395,7 @@ export class AudioProcessor {
 		// Phase 3: flush encoded chunks to muxer.
 		for (const { chunk, meta } of encodedChunks) {
 			if (this.cancelled) break;
-			await muxer.addAudioChunk(chunk, meta);
+			await muxer.addAudioChunk(trackId, chunk, meta);
 		}
 
 		console.log(
@@ -603,6 +605,7 @@ export class AudioProcessor {
 	private async muxRenderedAudioBlob(
 		blob: Blob,
 		muxer: VideoMuxer,
+		trackId: ExportAudioTrackId,
 		exportCodec: ExportAudioCodec,
 	): Promise<void> {
 		if (this.cancelled) return;
@@ -613,7 +616,7 @@ export class AudioProcessor {
 
 		try {
 			await demuxer.load(file);
-			await this.processTrimOnlyAudio(demuxer, muxer, [], undefined, exportCodec);
+			await this.processTrimOnlyAudio(demuxer, muxer, trackId, [], undefined, exportCodec);
 		} finally {
 			try {
 				demuxer.destroy();

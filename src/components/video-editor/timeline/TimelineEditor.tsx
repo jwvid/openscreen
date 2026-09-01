@@ -36,6 +36,7 @@ import Item from "./Item";
 import KeyframeMarkers from "./KeyframeMarkers";
 import Row from "./Row";
 import TimelineWrapper from "./TimelineWrapper";
+import { getNextZoomSelection } from "./zoomSelection";
 
 const ZOOM_ROW_ID = "row-zoom";
 const TRIM_ROW_ID = "row-trim";
@@ -60,8 +61,11 @@ interface TimelineEditorProps {
 	onToggleAutoFocusAll?: (on: boolean) => void;
 	onZoomSpanChange: (id: string, span: Span) => void;
 	onZoomDelete: (id: string) => void;
+	onZoomDeleteMany?: (ids: string[]) => void;
 	selectedZoomId: string | null;
+	selectedZoomIds?: string[];
 	onSelectZoom: (id: string | null) => void;
+	onSelectZooms?: (ids: string[]) => void;
 	trimRegions?: TrimRegion[];
 	onTrimAdded?: (span: Span) => void;
 	onTrimSpanChange?: (id: string, span: Span) => void;
@@ -559,11 +563,13 @@ function Timeline({
 	onSeek,
 	onRangeChange,
 	onSelectZoom,
+	onSelectZooms,
 	onSelectTrim,
 	onSelectAnnotation,
 	onSelectBlur,
 	onSelectSpeed,
 	selectedZoomId,
+	selectedZoomIds = selectedZoomId ? [selectedZoomId] : [],
 	selectedTrimId,
 	selectedAnnotationId,
 	selectedBlurId,
@@ -578,11 +584,13 @@ function Timeline({
 	onSeek?: (time: number) => void;
 	onRangeChange?: (updater: (previous: Range) => Range) => void;
 	onSelectZoom?: (id: string | null) => void;
+	onSelectZooms?: (ids: string[]) => void;
 	onSelectTrim?: (id: string | null) => void;
 	onSelectAnnotation?: (id: string | null) => void;
 	onSelectBlur?: (id: string | null) => void;
 	onSelectSpeed?: (id: string | null) => void;
 	selectedZoomId: string | null;
+	selectedZoomIds?: string[];
 	selectedTrimId?: string | null;
 	selectedAnnotationId?: string | null;
 	selectedBlurId?: string | null;
@@ -597,6 +605,7 @@ function Timeline({
 	const isScrubbingTimelineRef = useRef(false);
 	const scrubPointerIdRef = useRef<number | null>(null);
 	const peaks = useAudioPeaks(showTrimWaveform ? videoUrl : undefined);
+	const zoomSelectionAnchorRef = useRef<string | null>(selectedZoomId);
 
 	const setRefs = useCallback(
 		(node: HTMLDivElement | null) => {
@@ -625,12 +634,13 @@ function Timeline({
 	);
 
 	const clearTimelineSelection = useCallback(() => {
-		onSelectZoom?.(null);
+		if (onSelectZooms) onSelectZooms([]);
+		else onSelectZoom?.(null);
 		onSelectTrim?.(null);
 		onSelectAnnotation?.(null);
 		onSelectBlur?.(null);
 		onSelectSpeed?.(null);
-	}, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectBlur, onSelectSpeed]);
+	}, [onSelectZoom, onSelectZooms, onSelectTrim, onSelectAnnotation, onSelectBlur, onSelectSpeed]);
 
 	const handleTimelineClick = useCallback(
 		(e: React.MouseEvent<HTMLDivElement>) => {
@@ -749,10 +759,29 @@ function Timeline({
 	const annotationItems = items.filter((item) => item.rowId === ANNOTATION_ROW_ID);
 	const blurItems = items.filter((item) => item.rowId === BLUR_ROW_ID);
 	const speedItems = items.filter((item) => item.rowId === SPEED_ROW_ID);
+	const handleSelectZoomItem = useCallback(
+		(id: string, event: React.PointerEvent<HTMLDivElement>) => {
+			localTimelineRef.current?.focus({ preventScroll: true });
+			const toggle = event.metaKey || event.ctrlKey;
+			const next = getNextZoomSelection({
+				orderedIds: zoomItems.map((item) => item.id),
+				selectedIds: selectedZoomIds,
+				clickedId: id,
+				anchorId: zoomSelectionAnchorRef.current,
+				toggle,
+				range: event.shiftKey,
+			});
+			if (!event.shiftKey) zoomSelectionAnchorRef.current = id;
+			if (onSelectZooms) onSelectZooms(next);
+			else onSelectZoom?.(next.at(-1) ?? null);
+		},
+		[onSelectZoom, onSelectZooms, selectedZoomIds, zoomItems],
+	);
 
 	return (
 		<div
 			ref={setRefs}
+			tabIndex={0}
 			style={{ ...style, touchAction: "none" }}
 			className="select-none bg-[#0b0c0f] min-h-[190px] relative cursor-pointer group"
 			onClick={handleTimelineClick}
@@ -782,8 +811,8 @@ function Timeline({
 						key={item.id}
 						rowId={item.rowId}
 						span={item.span}
-						isSelected={item.id === selectedZoomId}
-						onSelect={() => onSelectZoom?.(item.id)}
+						isSelected={selectedZoomIds.includes(item.id)}
+						onSelect={(event) => handleSelectZoomItem(item.id, event)}
 						zoomDepth={item.zoomDepth}
 						zoomCustomScale={item.zoomCustomScale}
 						isAutoFocus={item.isAutoFocus}
@@ -895,8 +924,11 @@ export default function TimelineEditor({
 	onToggleAutoFocusAll,
 	onZoomSpanChange,
 	onZoomDelete,
+	onZoomDeleteMany,
 	selectedZoomId,
+	selectedZoomIds = selectedZoomId ? [selectedZoomId] : [],
 	onSelectZoom,
+	onSelectZooms,
 	trimRegions = [],
 	onTrimAdded,
 	onTrimSpanChange,
@@ -982,10 +1014,12 @@ export default function TimelineEditor({
 	);
 
 	const deleteSelectedZoom = useCallback(() => {
-		if (!selectedZoomId) return;
-		onZoomDelete(selectedZoomId);
-		onSelectZoom(null);
-	}, [selectedZoomId, onZoomDelete, onSelectZoom]);
+		if (selectedZoomIds.length === 0) return;
+		if (onZoomDeleteMany) onZoomDeleteMany(selectedZoomIds);
+		else selectedZoomIds.forEach(onZoomDelete);
+		if (onSelectZooms) onSelectZooms([]);
+		else onSelectZoom(null);
+	}, [selectedZoomIds, onZoomDeleteMany, onZoomDelete, onSelectZooms, onSelectZoom]);
 
 	const deleteSelectedTrim = useCallback(() => {
 		if (!selectedTrimId || !onTrimDelete || !onSelectTrim) return;
@@ -1242,6 +1276,14 @@ export default function TimelineEditor({
 				return;
 			}
 
+			const timelineHasFocus =
+				timelineContainerRef.current?.contains(document.activeElement) ?? false;
+			if (timelineHasFocus && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+				e.preventDefault();
+				onSelectZooms?.(zoomRegions.map((region) => region.id));
+				return;
+			}
+
 			if (matchesShortcut(e, keyShortcuts.addKeyframe, isMac)) {
 				addKeyframe();
 			}
@@ -1290,7 +1332,8 @@ export default function TimelineEditor({
 			) {
 				if (selectedKeyframeId) {
 					deleteSelectedKeyframe();
-				} else if (selectedZoomId) {
+				} else if (selectedZoomIds.length > 0) {
+					e.preventDefault();
 					deleteSelectedZoom();
 				} else if (selectedTrimId) {
 					deleteSelectedTrim();
@@ -1319,7 +1362,7 @@ export default function TimelineEditor({
 		deleteSelectedBlur,
 		deleteSelectedSpeed,
 		selectedKeyframeId,
-		selectedZoomId,
+		selectedZoomIds,
 		selectedTrimId,
 		selectedAnnotationId,
 		selectedBlurId,
@@ -1327,6 +1370,8 @@ export default function TimelineEditor({
 		annotationRegions,
 		currentTime,
 		onSelectAnnotation,
+		onSelectZooms,
+		zoomRegions,
 		keyShortcuts,
 		isMac,
 	]);
@@ -1617,6 +1662,7 @@ export default function TimelineEditor({
 			</div>
 			<div
 				ref={timelineContainerRef}
+				tabIndex={-1}
 				className="flex-1 min-h-0 overflow-auto custom-scrollbar bg-[#09090b] relative"
 				onClick={() => setSelectedKeyframeId(null)}
 			>
@@ -1648,11 +1694,13 @@ export default function TimelineEditor({
 						onSeek={onSeek}
 						onRangeChange={setRange}
 						onSelectZoom={onSelectZoom}
+						onSelectZooms={onSelectZooms}
 						onSelectTrim={onSelectTrim}
 						onSelectAnnotation={onSelectAnnotation}
 						onSelectBlur={onSelectBlur}
 						onSelectSpeed={onSelectSpeed}
 						selectedZoomId={selectedZoomId}
+						selectedZoomIds={selectedZoomIds}
 						selectedTrimId={selectedTrimId}
 						selectedAnnotationId={selectedAnnotationId}
 						selectedBlurId={selectedBlurId}

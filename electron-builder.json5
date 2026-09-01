@@ -41,6 +41,10 @@
       "to": "cursors"
     },
     {
+      "from": "public/sounds",
+      "to": "sounds"
+    },
+    {
       "from": "caption-assets",
       "to": "caption-assets"
     }

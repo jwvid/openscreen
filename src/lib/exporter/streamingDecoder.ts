@@ -58,6 +58,10 @@ export interface DecodedVideoInfo {
 	audioCodec?: string;
 }
 
+export interface StreamingVideoDecoderOptions {
+	hardwareAcceleration?: HardwareAcceleration;
+}
+
 type EarlyDecodeEndCheck = {
 	cancelled: boolean;
 	lastDecodedFrameSec: number | null;
@@ -168,6 +172,11 @@ export class StreamingVideoDecoder {
 	private decoder: VideoDecoder | null = null;
 	private cancelled = false;
 	private metadata: DecodedVideoInfo | null = null;
+	private hardwareAcceleration: HardwareAcceleration | undefined;
+
+	constructor(options: StreamingVideoDecoderOptions = {}) {
+		this.hardwareAcceleration = options.hardwareAcceleration;
+	}
 
 	/** Routes to the appropriate loader based on whether the source is local or remote. */
 	private async loadSourceFile(videoUrl: string): Promise<{ file: File; blob: Blob }> {
@@ -389,10 +398,12 @@ export class StreamingVideoDecoder {
 				}
 			},
 		});
-		const preferredDecoderConfig = shouldPreferSoftwareDecode
+		const preferredAcceleration =
+			this.hardwareAcceleration ?? (shouldPreferSoftwareDecode ? "prefer-software" : undefined);
+		const preferredDecoderConfig = preferredAcceleration
 			? {
 					...decoderConfig,
-					hardwareAcceleration: "prefer-software" as const,
+					hardwareAcceleration: preferredAcceleration,
 				}
 			: decoderConfig;
 
@@ -405,9 +416,17 @@ export class StreamingVideoDecoder {
 			if (!support.supported) {
 				throw new Error(`Unsupported codec: ${preferredDecoderConfig.codec}`);
 			}
+			if (preferredAcceleration) {
+				console.log(
+					`[StreamingVideoDecoder] Using ${preferredAcceleration} decoding for ${preferredDecoderConfig.codec}`,
+				);
+			}
 			this.decoder.configure(preferredDecoderConfig);
 		} catch (error) {
-			if (shouldPreferSoftwareDecode) {
+			if (preferredAcceleration) {
+				console.warn(
+					`[StreamingVideoDecoder] ${preferredAcceleration} decode unavailable; retrying with the browser default`,
+				);
 				this.decoder.configure(decoderConfig);
 			} else if (/^avc1/i.test(codec)) {
 				const fallback = { ...decoderConfig, codec: "avc1.640034" };

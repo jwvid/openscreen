@@ -191,6 +191,30 @@ interface Window {
 			message?: string;
 			error?: string;
 		}>;
+		startExportWrite: (filePath: string) => Promise<{
+			success: boolean;
+			id?: string;
+			message?: string;
+			error?: string;
+		}>;
+		writeExportChunk: (
+			id: string,
+			data: ArrayBuffer,
+			position: number,
+		) => Promise<{
+			success: boolean;
+			message?: string;
+			error?: string;
+		}>;
+		finishExportWrite: (
+			id: string,
+			discard?: boolean,
+		) => Promise<{
+			success: boolean;
+			path?: string;
+			message?: string;
+			error?: string;
+		}>;
 		openVideoFilePicker: () => Promise<{ success: boolean; path?: string; canceled?: boolean }>;
 		setCurrentVideoPath: (path: string) => Promise<{ success: boolean }>;
 		setCurrentRecordingSession: (
@@ -208,6 +232,12 @@ interface Window {
 			success: boolean;
 			data?: ArrayBuffer;
 			path?: string;
+			message?: string;
+			error?: string;
+		}>;
+		readBundledAsset: (relativePath: string) => Promise<{
+			success: boolean;
+			data?: ArrayBuffer;
 			message?: string;
 			error?: string;
 		}>;

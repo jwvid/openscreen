@@ -107,7 +107,10 @@
 	"export": {
 		"videoButton": "Xuất Video",
 		"gifButton": "Xuất GIF",
-		"chooseSaveLocation": "Chọn vị trí lưu"
+		"chooseSaveLocation": "Chọn vị trí lưu",
+		"cursorSounds": "Âm thanh nhấp chuột",
+		"cursorSoundsDescription": "Nhấp và kéo trên một rãnh âm thanh riêng",
+		"cursorSoundsUnavailable": "Bản ghi này không có dữ liệu nhấp chuột"
 	},
 	"support": {
 		"reportBug": "Báo cáo lỗi",

@@ -108,7 +108,10 @@
 	"export": {
 		"videoButton": "Export Video",
 		"gifButton": "Export GIF",
-		"chooseSaveLocation": "Choose Save Location"
+		"chooseSaveLocation": "Choose Save Location",
+		"cursorSounds": "Mouse click sounds",
+		"cursorSoundsDescription": "Separate audio track for clicks and drags",
+		"cursorSoundsUnavailable": "No mouse click data in this recording"
 	},
 	"support": {
 		"reportBug": "Report Bug",

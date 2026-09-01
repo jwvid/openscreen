@@ -139,11 +139,15 @@ export class GifExporter {
 			this.cleanup();
 			this.cancelled = false;
 
-			this.streamingDecoder = new StreamingVideoDecoder();
+			this.streamingDecoder = new StreamingVideoDecoder({
+				hardwareAcceleration: platform === "darwin" ? "prefer-hardware" : undefined,
+			});
 			const videoInfo = await this.streamingDecoder.loadMetadata(this.config.videoUrl);
 			let webcamInfo: Awaited<ReturnType<StreamingVideoDecoder["loadMetadata"]>> | null = null;
 			if (this.config.webcamVideoUrl) {
-				this.webcamDecoder = new StreamingVideoDecoder();
+				this.webcamDecoder = new StreamingVideoDecoder({
+					hardwareAcceleration: platform === "darwin" ? "prefer-hardware" : undefined,
+				});
 				webcamInfo = await this.webcamDecoder.loadMetadata(this.config.webcamVideoUrl);
 			}
 

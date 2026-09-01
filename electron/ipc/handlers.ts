@@ -41,6 +41,8 @@ import { createCursorRecordingSession } from "../native-bridge/cursor/recording/
 import { requestMacCursorAccessibilityAccess } from "../native-bridge/cursor/recording/macNativeCursorRecordingSession";
 import type { CursorRecordingSession } from "../native-bridge/cursor/recording/session";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
+import { resolveBundledAssetPath } from "./bundledAsset";
+import { ExportStreamRegistry } from "./exportStream";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 
@@ -61,6 +63,7 @@ const ALLOWED_IMPORT_VIDEO_EXTENSIONS = new Set([
 ]);
 const PREVIEW_AUDIO_DIR = path.join(app.getPath("userData"), "preview-audio");
 const nativeMacCaptureEvents = new EventEmitter();
+const exportStreamRegistry = new ExportStreamRegistry();
 
 // Paths the user approved via file picker or project load (i.e. outside the default dirs).
 const approvedPaths = new Set<string>();
@@ -2447,6 +2450,49 @@ export function registerIpcHandlers(
 		}
 	});
 
+	ipcMain.handle("start-export-write", async (_, filePath: string) => {
+		try {
+			if (
+				typeof filePath !== "string" ||
+				!path.isAbsolute(filePath) ||
+				!filePath.toLowerCase().endsWith(".mp4")
+			) {
+				return { success: false, message: "Invalid MP4 export path" };
+			}
+
+			const normalizedPath = path.normalize(filePath);
+			await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
+			const id = await exportStreamRegistry.open(normalizedPath);
+			return { success: true, id };
+		} catch (error) {
+			console.error("Failed to start streamed export:", error);
+			return { success: false, message: "Failed to start export", error: String(error) };
+		}
+	});
+
+	ipcMain.handle(
+		"write-export-chunk",
+		async (_, id: string, data: ArrayBuffer, position: number) => {
+			try {
+				await exportStreamRegistry.write(id, data, position);
+				return { success: true };
+			} catch (error) {
+				console.error("Failed to write streamed export chunk:", error);
+				return { success: false, message: "Failed to write export data", error: String(error) };
+			}
+		},
+	);
+
+	ipcMain.handle("finish-export-write", async (_, id: string, discard = false) => {
+		try {
+			const filePath = await exportStreamRegistry.close(id, discard);
+			return { success: true, path: filePath ?? undefined };
+		} catch (error) {
+			console.error("Failed to finish streamed export:", error);
+			return { success: false, message: "Failed to finish export", error: String(error) };
+		}
+	});
+
 	ipcMain.handle("open-video-file-picker", async () => {
 		try {
 			const dialogOptions = buildDialogOptions(
@@ -2537,6 +2583,31 @@ export function registerIpcHandlers(
 			return {
 				success: false,
 				message: "Failed to read binary file",
+				error: String(error),
+			};
+		}
+	});
+
+	ipcMain.handle("read-bundled-asset", async (_, relativePath: unknown) => {
+		try {
+			const assetRoot = app.isPackaged
+				? process.resourcesPath
+				: path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
+			const assetPath = resolveBundledAssetPath(assetRoot, relativePath);
+			if (!assetPath) {
+				return { success: false, message: "Bundled asset path is not allowed" };
+			}
+
+			const data = await fs.readFile(assetPath);
+			return {
+				success: true,
+				data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+			};
+		} catch (error) {
+			console.error("Failed to read bundled asset:", error);
+			return {
+				success: false,
+				message: "Failed to read bundled asset",
 				error: String(error),
 			};
 		}

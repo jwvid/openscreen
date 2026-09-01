@@ -107,7 +107,10 @@
 	"export": {
 		"videoButton": "Экспорт видео",
 		"gifButton": "Экспорт GIF",
-		"chooseSaveLocation": "Выбрать место сохранения"
+		"chooseSaveLocation": "Выбрать место сохранения",
+		"cursorSounds": "Звуки щелчков мыши",
+		"cursorSoundsDescription": "Щелчки и перетаскивания в отдельной аудиодорожке",
+		"cursorSoundsUnavailable": "В этой записи нет данных о щелчках мыши"
 	},
 	"support": {
 		"reportBug": "Сообщить об ошибке",

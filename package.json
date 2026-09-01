@@ -1,7 +1,7 @@
 {
 	"name": "openscreen",
 	"private": true,
-	"version": "1.5.0",
+	"version": "1.7.3",
 	"type": "module",
 	"packageManager": "npm@10.9.4",
 	"engines": {
@@ -22,6 +22,7 @@
 		"preview": "vite preview",
 		"build:native:mac": "node scripts/build-macos-screencapturekit-helper.mjs",
 		"build:mac": "npm run build:native:mac && tsc && vite build && electron-builder --mac",
+		"install:mac:local": "node scripts/install-macos-local-signed.mjs",
 		"build:native:win": "node scripts/build-windows-wgc-helper.mjs",
 		"build:win": "npm run build:native:win && tsc && vite build && electron-builder --win --config.npmRebuild=false",
 		"build:linux": "tsc && vite build && electron-builder --linux AppImage deb pacman --config.npmRebuild=false",

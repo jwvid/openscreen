@@ -107,7 +107,10 @@
 	"export": {
 		"videoButton": "导出视频",
 		"gifButton": "导出 GIF",
-		"chooseSaveLocation": "选择保存位置"
+		"chooseSaveLocation": "选择保存位置",
+		"cursorSounds": "鼠标点击声音",
+		"cursorSoundsDescription": "将点击和拖动添加为单独音轨",
+		"cursorSoundsUnavailable": "此录制中没有鼠标点击数据"
 	},
 	"support": {
 		"reportBug": "报告错误",

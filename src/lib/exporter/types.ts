@@ -18,6 +18,7 @@ export interface ExportProgress {
 export interface ExportResult {
 	success: boolean;
 	blob?: Blob;
+	path?: string;
 	error?: string;
 	warnings?: string[];
 }
@@ -49,6 +50,7 @@ export interface ExportSettings {
 	format: ExportFormat;
 	// MP4 settings
 	quality?: ExportQuality;
+	includeCursorSounds?: boolean;
 	// GIF settings
 	gifConfig?: GifExportConfig;
 }

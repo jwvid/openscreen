@@ -27,6 +27,8 @@ export interface UserPreferences {
 	exportQuality: ExportQuality;
 	/** Default export format */
 	exportFormat: ExportFormat;
+	/** Whether MP4 exports include a separate mouse click sound track */
+	includeCursorSounds: boolean;
 	/** Folder used for the most recent successful export, if any */
 	exportFolder: string | null;
 	/** Folder of the most recently opened project, if any */
@@ -40,6 +42,7 @@ export const DEFAULT_PREFS: UserPreferences = {
 	aspectRatio: DEFAULT_EDITOR_LAYOUT_SETTINGS.aspectRatio,
 	exportQuality: DEFAULT_EXPORT_SETTINGS.quality,
 	exportFormat: DEFAULT_EXPORT_SETTINGS.format,
+	includeCursorSounds: DEFAULT_EXPORT_SETTINGS.includeCursorSounds,
 	exportFolder: null,
 	projectFolder: null,
 	trayLayout: "horizontal",
@@ -87,6 +90,10 @@ export function loadUserPreferences(): UserPreferences {
 			raw.exportFormat === "gif" || raw.exportFormat === "mp4"
 				? (raw.exportFormat as ExportFormat)
 				: DEFAULT_PREFS.exportFormat,
+		includeCursorSounds:
+			typeof raw.includeCursorSounds === "boolean"
+				? raw.includeCursorSounds
+				: DEFAULT_PREFS.includeCursorSounds,
 		exportFolder:
 			typeof raw.exportFolder === "string" && raw.exportFolder.length > 0
 				? raw.exportFolder

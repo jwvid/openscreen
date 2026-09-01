@@ -107,7 +107,10 @@
 	"export": {
 		"videoButton": "تصدير الفيديو",
 		"gifButton": "تصدير GIF",
-		"chooseSaveLocation": "اختيار موقع الحفظ"
+		"chooseSaveLocation": "اختيار موقع الحفظ",
+		"cursorSounds": "أصوات نقر الفأرة",
+		"cursorSoundsDescription": "النقر والسحب في مسار صوتي منفصل",
+		"cursorSoundsUnavailable": "لا توجد بيانات نقر بالفأرة في هذا التسجيل"
 	},
 	"support": {
 		"reportBug": "الإبلاغ عن خطأ",

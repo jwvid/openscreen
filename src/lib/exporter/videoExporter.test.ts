@@ -107,6 +107,21 @@ describe("isSourceCopyFastPathEligible", () => {
 			),
 		).toBe(false);
 	});
+
+	it("rejects source copy when a generated mouse sound track is requested", () => {
+		const config = createConfig({
+			includeCursorSounds: true,
+			cursorTelemetry: [
+				{ timeMs: 100, cx: 0.5, cy: 0.5, interactionType: "click" },
+				{ timeMs: 140, cx: 0.5, cy: 0.5, interactionType: "mouseup" },
+			],
+		});
+
+		expect(isSourceCopyFastPathEligible(config, { width: 1920, height: 1080 })).toBe(false);
+		expect(getSourceCopyFastPathBlockers(config, { width: 1920, height: 1080 })).toContain(
+			"mouse click sounds are enabled",
+		);
+	});
 });
 
 describe("getSourceCopyFastPathBlockers", () => {

@@ -146,6 +146,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	writeExportToPath: (videoData: ArrayBuffer, filePath: string) => {
 		return ipcRenderer.invoke("write-export-to-path", videoData, filePath);
 	},
+	startExportWrite: (filePath: string) => {
+		return ipcRenderer.invoke("start-export-write", filePath);
+	},
+	writeExportChunk: (id: string, data: ArrayBuffer, position: number) => {
+		return ipcRenderer.invoke("write-export-chunk", id, data, position);
+	},
+	finishExportWrite: (id: string, discard?: boolean) => {
+		return ipcRenderer.invoke("finish-export-write", id, discard);
+	},
 	openVideoFilePicker: () => {
 		return ipcRenderer.invoke("open-video-file-picker");
 	},
@@ -163,6 +172,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	readBinaryFile: (filePath: string) => {
 		return ipcRenderer.invoke("read-binary-file", filePath);
+	},
+	readBundledAsset: (relativePath: string) => {
+		return ipcRenderer.invoke("read-bundled-asset", relativePath);
 	},
 	preparePreviewAudioTrack: (filePath: string) => {
 		return ipcRenderer.invoke("prepare-preview-audio-track", filePath);

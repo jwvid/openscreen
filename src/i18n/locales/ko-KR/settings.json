@@ -107,7 +107,10 @@
 	"export": {
 		"videoButton": "비디오 내보내기",
 		"gifButton": "GIF 내보내기",
-		"chooseSaveLocation": "저장 위치 선택"
+		"chooseSaveLocation": "저장 위치 선택",
+		"cursorSounds": "마우스 클릭 소리",
+		"cursorSoundsDescription": "클릭·드래그 소리를 별도 오디오 트랙으로 추가",
+		"cursorSoundsUnavailable": "이 녹화에는 마우스 클릭 데이터가 없습니다"
 	},
 	"support": {
 		"reportBug": "버그 신고",

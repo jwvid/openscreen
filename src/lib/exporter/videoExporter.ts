@@ -7,12 +7,14 @@ import type {
 	WebcamSizePreset,
 	ZoomRegion,
 } from "@/components/video-editor/types";
+import { deriveCursorSoundEvents, mapCursorSoundEventsToExport } from "@/lib/cursor/cursorSounds";
 import { BackgroundLoadError } from "@/lib/wallpaper";
 import type { CursorRecordingData } from "@/native/contracts";
 import { getPlatform } from "@/utils/platformUtils";
 import { AudioProcessor } from "./audioEncoder";
+import { CursorSoundAudioProcessor } from "./cursorSoundEncoder";
 import { FrameRenderer } from "./frameRenderer";
-import { VideoMuxer } from "./muxer";
+import { type ExportAudioTrackConfig, VideoMuxer } from "./muxer";
 import { StreamingVideoDecoder } from "./streamingDecoder";
 import { TimestampedVideoFrameQueue } from "./timestampedVideoFrameQueue";
 import type { ExportConfig, ExportProgress, ExportResult } from "./types";
@@ -22,6 +24,7 @@ const ENCODER_FLUSH_TIMEOUT_MS = 20_000;
 
 export interface VideoExporterConfig extends ExportConfig {
 	videoUrl: string;
+	outputPath?: string;
 	webcamVideoUrl?: string;
 	wallpaper: string;
 	zoomRegions: ZoomRegion[];
@@ -54,6 +57,7 @@ export interface VideoExporterConfig extends ExportConfig {
 	previewHeight?: number;
 	cursorTelemetry?: import("@/components/video-editor/types").CursorTelemetryPoint[];
 	cursorClickTimestamps?: number[];
+	includeCursorSounds?: boolean;
 	onProgress?: (progress: ExportProgress) => void;
 }
 
@@ -75,6 +79,11 @@ function hasActiveSpeedRegions(regions?: SpeedRegion[]) {
 
 function hasNativeCursorOverlay(config: VideoExporterConfig) {
 	return (config.cursorScale ?? 0) > 0;
+}
+
+function getSourceCursorSoundEvents(config: VideoExporterConfig) {
+	const nativeEvents = deriveCursorSoundEvents(config.cursorRecordingData?.samples);
+	return nativeEvents.length > 0 ? nativeEvents : deriveCursorSoundEvents(config.cursorTelemetry);
 }
 
 function isDefaultCrop(cropRegion: CropRegion) {
@@ -120,6 +129,9 @@ export function getSourceCopyFastPathBlockers(
 	}
 	if (config.showBlur) blockers.push("background blur is enabled");
 	if ((config.motionBlurAmount ?? 0) > SOURCE_COPY_EPSILON) blockers.push("motion blur is enabled");
+	if (config.includeCursorSounds && getSourceCursorSoundEvents(config).length > 0) {
+		blockers.push("mouse click sounds are enabled");
+	}
 
 	return blockers;
 }
@@ -144,6 +156,7 @@ export class VideoExporter {
 	private encoder: VideoEncoder | null = null;
 	private muxer: VideoMuxer | null = null;
 	private audioProcessor: AudioProcessor | null = null;
+	private cursorSoundAudioProcessor: CursorSoundAudioProcessor | null = null;
 	private webcamDecoder: StreamingVideoDecoder | null = null;
 	private cancelled = false;
 	private encodeQueue = 0;
@@ -151,7 +164,7 @@ export class VideoExporter {
 	private readonly MAX_ENCODE_QUEUE = 120;
 	private videoDescription: Uint8Array | undefined;
 	private videoColorSpace: VideoColorSpaceInit | undefined;
-	private muxingPromises: Promise<void>[] = [];
+	private muxingTail: Promise<void> = Promise.resolve();
 	private chunkCount = 0;
 	private lastEncoderOutputAt = 0;
 	private fatalEncoderError: Error | null = null;
@@ -186,7 +199,7 @@ export class VideoExporter {
 					);
 				}
 			} finally {
-				this.cleanup();
+				await this.cleanup();
 			}
 		}
 
@@ -206,15 +219,20 @@ export class VideoExporter {
 		let webcamDecoder: StreamingVideoDecoder | null = null;
 		const warnings: string[] = [];
 		const onWarning = (message: string) => warnings.push(message);
+		const exportStartedAt = performance.now();
+		let renderDurationMs = 0;
+		let encoderBackpressureMs = 0;
 
-		this.cleanup();
+		await this.cleanup();
 		this.cancelled = false;
 		this.fatalEncoderError = null;
 
 		try {
 			const platform = await getPlatform();
 
-			const streamingDecoder = new StreamingVideoDecoder();
+			const streamingDecoder = new StreamingVideoDecoder({
+				hardwareAcceleration: platform === "darwin" ? "prefer-hardware" : undefined,
+			});
 			this.streamingDecoder = streamingDecoder;
 			const videoInfo = await streamingDecoder.loadMetadata(this.config.videoUrl);
 			const sourceCopyResult = await this.trySourceCopyFastPath(videoInfo);
@@ -224,7 +242,9 @@ export class VideoExporter {
 
 			let webcamInfo: Awaited<ReturnType<StreamingVideoDecoder["loadMetadata"]>> | null = null;
 			if (this.config.webcamVideoUrl) {
-				webcamDecoder = new StreamingVideoDecoder();
+				webcamDecoder = new StreamingVideoDecoder({
+					hardwareAcceleration: platform === "darwin" ? "prefer-hardware" : undefined,
+				});
 				this.webcamDecoder = webcamDecoder;
 				webcamInfo = await webcamDecoder.loadMetadata(this.config.webcamVideoUrl);
 			}
@@ -272,20 +292,54 @@ export class VideoExporter {
 			await this.initializeEncoder(encoderPreference);
 
 			const sourceDemuxer = streamingDecoder.getDemuxer();
-			const audioExportCodec =
+			const sourceAudioExportCodec =
 				videoInfo.hasAudio && sourceDemuxer
 					? await AudioProcessor.selectSupportedExportCodecForSource(sourceDemuxer)
 					: null;
-			if (videoInfo.hasAudio && !audioExportCodec) {
+			if (videoInfo.hasAudio && !sourceAudioExportCodec) {
 				console.warn("[VideoExporter] No supported audio export codec, exporting video-only.");
 			}
 
-			const hasAudio = Boolean(audioExportCodec);
-			const muxer = new VideoMuxer(this.config, hasAudio, audioExportCodec?.muxerCodec);
+			const sourceCursorSoundEvents = this.config.includeCursorSounds
+				? getSourceCursorSoundEvents(this.config)
+				: [];
+			const cursorSoundEvents = mapCursorSoundEventsToExport(
+				sourceCursorSoundEvents,
+				videoInfo.duration * 1000,
+				this.config.trimRegions,
+				this.config.speedRegions,
+			);
+			const cursorSoundExportCodec =
+				cursorSoundEvents.length > 0
+					? await AudioProcessor.selectSupportedExportCodec(48_000, 2)
+					: null;
+			if (cursorSoundEvents.length > 0 && !cursorSoundExportCodec) {
+				throw new Error("No supported audio encoder is available for mouse click sounds.");
+			}
+
+			const audioTracks: ExportAudioTrackConfig[] = [];
+			if (sourceAudioExportCodec) {
+				audioTracks.push({
+					id: "source",
+					codec: sourceAudioExportCodec.muxerCodec,
+					name: "Original Audio",
+					isDefault: true,
+				});
+			}
+			if (cursorSoundExportCodec) {
+				audioTracks.push({
+					id: "cursor-sounds",
+					codec: cursorSoundExportCodec.muxerCodec,
+					name: "Mouse Clicks",
+					isDefault: true,
+				});
+			}
+
+			const muxer = new VideoMuxer(this.config, audioTracks, this.config.outputPath);
 			this.muxer = muxer;
 			await muxer.initialize();
 
-			const { totalFrames } = streamingDecoder.getExportMetrics(
+			const { totalFrames, effectiveDuration } = streamingDecoder.getExportMetrics(
 				this.config.frameRate,
 				this.config.trimRegions,
 				this.config.speedRegions,
@@ -358,7 +412,9 @@ export class VideoExporter {
 						}
 
 						const sourceTimestampUs = sourceTimestampMs * 1000;
+						const renderStartedAt = performance.now();
 						await renderer.renderFrame(videoFrame, sourceTimestampUs, webcamFrame);
+						renderDurationMs += performance.now() - renderStartedAt;
 
 						const canvas = renderer.getCanvas();
 
@@ -386,6 +442,7 @@ export class VideoExporter {
 							exportFrame = new VideoFrame(canvas, { timestamp, duration: frameDuration });
 						}
 
+						const encoderWaitStartedAt = performance.now();
 						while (
 							this.encoder &&
 							this.encoder.encodeQueueSize >= maxEncodeQueue &&
@@ -401,6 +458,7 @@ export class VideoExporter {
 							}
 							await new Promise((resolve) => setTimeout(resolve, 5));
 						}
+						encoderBackpressureMs += performance.now() - encoderWaitStartedAt;
 
 						if (this.encoder && this.encoder.state === "configured") {
 							this.encodeQueue++;
@@ -455,7 +513,10 @@ export class VideoExporter {
 				throw this.fatalEncoderError;
 			}
 
-			await Promise.all(this.muxingPromises);
+			await this.muxingTail;
+			if (this.fatalEncoderError) {
+				throw this.fatalEncoderError;
+			}
 
 			this.reportProgress({
 				currentFrame: totalFrames,
@@ -465,7 +526,7 @@ export class VideoExporter {
 				phase: "finalizing",
 			});
 
-			if (hasAudio && audioExportCodec && !this.cancelled) {
+			if (sourceAudioExportCodec && !this.cancelled) {
 				const demuxer = streamingDecoder.getDemuxer();
 				if (demuxer) {
 					console.log("[VideoExporter] Processing audio track...");
@@ -473,17 +534,47 @@ export class VideoExporter {
 					await this.audioProcessor.process(
 						demuxer,
 						muxer,
+						"source",
 						this.config.videoUrl,
 						this.config.trimRegions,
 						this.config.speedRegions,
 						videoInfo.duration,
-						audioExportCodec,
+						sourceAudioExportCodec,
 					);
 				}
 			}
 
+			if (cursorSoundExportCodec && cursorSoundEvents.length > 0 && !this.cancelled) {
+				console.log(
+					`[VideoExporter] Processing ${cursorSoundEvents.length} mouse sound events on a separate audio track...`,
+				);
+				this.cursorSoundAudioProcessor = new CursorSoundAudioProcessor();
+				await this.cursorSoundAudioProcessor.process(
+					muxer,
+					"cursor-sounds",
+					cursorSoundEvents,
+					effectiveDuration,
+					cursorSoundExportCodec,
+				);
+			}
+
 			const blob = await muxer.finalize();
-			return { success: true, blob, warnings: warnings.length > 0 ? warnings : undefined };
+			const totalDurationMs = performance.now() - exportStartedAt;
+			console.info("[VideoExporter] performance", {
+				renderMode: renderer.getRenderMode(),
+				frames: frameIndex,
+				resolution: `${this.config.width}x${this.config.height}`,
+				totalDurationMs: Math.round(totalDurationMs),
+				renderDurationMs: Math.round(renderDurationMs),
+				averageRenderMs: frameIndex > 0 ? Number((renderDurationMs / frameIndex).toFixed(2)) : 0,
+				encoderBackpressureMs: Math.round(encoderBackpressureMs),
+			});
+			return {
+				success: true,
+				blob: blob ?? undefined,
+				path: blob ? undefined : this.config.outputPath,
+				warnings: warnings.length > 0 ? warnings : undefined,
+			};
 		} finally {
 			stopWebcamDecode = true;
 			webcamFrameQueue?.destroy();
@@ -496,7 +587,7 @@ export class VideoExporter {
 
 	private async initializeEncoder(hardwareAcceleration: HardwareAcceleration): Promise<void> {
 		this.encodeQueue = 0;
-		this.muxingPromises = [];
+		this.muxingTail = Promise.resolve();
 		this.chunkCount = 0;
 		this.lastEncoderOutputAt = Date.now();
 		this.fatalEncoderError = null;
@@ -523,8 +614,12 @@ export class VideoExporter {
 				const isFirstChunk = this.chunkCount === 0;
 				this.chunkCount++;
 
-				const muxingPromise = (async () => {
-					try {
+				// Preserve packet order without retaining one Promise per frame for the
+				// entire export. This keeps long 60 fps recordings at constant muxing
+				// bookkeeping memory while the encoder and renderer remain pipelined.
+				this.muxingTail = this.muxingTail
+					.then(async () => {
+						if (this.cancelled || this.fatalEncoderError) return;
 						if (isFirstChunk && this.videoDescription) {
 							const colorSpace = this.videoColorSpace || {
 								primaries: "bt709",
@@ -547,12 +642,14 @@ export class VideoExporter {
 						} else {
 							await this.muxer!.addVideoChunk(chunk, meta);
 						}
-					} catch (error) {
+					})
+					.catch((error) => {
 						console.error("Muxing error:", error);
-					}
-				})();
-
-				this.muxingPromises.push(muxingPromise);
+						this.fatalEncoderError =
+							error instanceof Error ? error : new Error(`Muxing error: ${String(error)}`);
+						this.streamingDecoder?.cancel();
+						this.webcamDecoder?.cancel();
+					});
 				this.encodeQueue = Math.max(0, this.encodeQueue - 1);
 			},
 			error: (error) => {
@@ -601,10 +698,11 @@ export class VideoExporter {
 		if (this.audioProcessor) {
 			this.audioProcessor.cancel();
 		}
-		this.cleanup();
+		this.cursorSoundAudioProcessor?.cancel();
+		void this.cleanup();
 	}
 
-	private cleanup(): void {
+	private async cleanup(): Promise<void> {
 		if (this.encoder) {
 			try {
 				if (this.encoder.state === "configured") {
@@ -644,9 +742,17 @@ export class VideoExporter {
 		}
 
 		this.audioProcessor = null;
-		this.muxer = null;
+		this.cursorSoundAudioProcessor = null;
+		if (this.muxer) {
+			try {
+				await this.muxer.cancel();
+			} catch (e) {
+				console.warn("Error cancelling muxer:", e);
+			}
+			this.muxer = null;
+		}
 		this.encodeQueue = 0;
-		this.muxingPromises = [];
+		this.muxingTail = Promise.resolve();
 		this.chunkCount = 0;
 		this.videoDescription = undefined;
 		this.videoColorSpace = undefined;
