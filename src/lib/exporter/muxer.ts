@@ -92,7 +92,9 @@ export class VideoMuxer {
 		try {
 			this.output = new Output({
 				format: new Mp4OutputFormat({
-					fastStart: "in-memory",
+					// A disk-backed export must not retain every encoded packet until
+					// finalization. Write ordinary MP4 media as it arrives, then its index.
+					fastStart: this.exportStreamId ? false : "in-memory",
 				}),
 				target: this.target,
 			});

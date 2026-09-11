@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { shouldFailDecodeEndedEarly, validateDuration } from "./streamingDecoder";
+import {
+	getIndexedVideoDuration,
+	shouldFailDecodeEndedEarly,
+	validateDuration,
+} from "./streamingDecoder";
+
+describe("getIndexedVideoDuration", () => {
+	it("uses consistent finalized MP4 timing without scanning a large video", () => {
+		expect(getIndexedVideoDuration("mov,mp4,m4a,3gp,3g2,mj2", 472.06075, 472.06)).toBe(472.06);
+	});
+	it.each([
+		["matroska,webm", 472, 472],
+		["mp4", 0, 472],
+		["mp4", Infinity, 472],
+		["mp4", 472, 0],
+		["mov", 472, 200],
+	])("still scans unreliable timing %s %s %s", (format, container, stream) => {
+		expect(getIndexedVideoDuration(String(format), Number(container), Number(stream))).toBeNull();
+	});
+});
 
 describe("validateDuration", () => {
 	it("returns scanned duration when container reports Infinity", () => {

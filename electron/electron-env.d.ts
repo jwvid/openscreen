@@ -229,6 +229,10 @@ interface Window {
 			success: boolean;
 			session?: import("../src/lib/recordingSession").RecordingSession;
 		}>;
+		openMediaSource: (
+			filePath: string,
+		) => Promise<{ success: boolean; id?: string; url?: string; message?: string }>;
+		closeMediaSource: (id: string) => Promise<void>;
 		readBinaryFile: (
 			filePath: string,
 			maxBytes?: number,

@@ -72,6 +72,20 @@ type EarlyDecodeEndCheck = {
 const EARLY_DECODE_END_THRESHOLD_SEC = 1;
 const METADATA_TAIL_TOLERANCE_SEC = 2;
 const STREAM_DURATION_MATCH_TOLERANCE_SEC = 0.25;
+
+/** Finalized MP4/MOV already carries indexed video timing. Only trust it when
+ * the container and video stream agree; WebM still needs the packet scan.
+ */
+export function getIndexedVideoDuration(
+	format: string,
+	container: number,
+	stream: number,
+): number | null {
+	if (!format.split(",").some((name) => name === "mov" || name === "mp4")) return null;
+	if (!Number.isFinite(container) || !Number.isFinite(stream) || container <= 0 || stream <= 0)
+		return null;
+	return Math.abs(container - stream) <= STREAM_DURATION_MATCH_TOLERANCE_SEC ? stream : null;
+}
 const DURATION_DIVERGENCE_THRESHOLD_SEC = 1.5;
 // Fallback upper bound for the packet scan when no reliable duration hint exists.
 // An explicit end is required (some containers are truncated without one), but a
@@ -171,6 +185,7 @@ type OnFrameCallback = (
  * Kept frames are resampled to the target frame rate in a streaming pass.
  */
 export class StreamingVideoDecoder {
+	private mediaSourceId: string | null = null;
 	private demuxer: WebDemuxer | null = null;
 	private decoder: VideoDecoder | null = null;
 	private cancelled = false;
@@ -233,13 +248,22 @@ export class StreamingVideoDecoder {
 	}
 
 	async loadMetadata(videoUrl: string): Promise<DecodedVideoInfo> {
-		const { file } = await this.loadSourceFile(videoUrl);
+		let source: File | string;
+		if (!/^(https?:|blob:|data:)/i.test(videoUrl) && window.electronAPI?.openMediaSource) {
+			const result = await window.electronAPI.openMediaSource(videoUrl);
+			if (!result.success || !result.id || !result.url)
+				throw new Error(result.message || "Failed to open media reader");
+			this.mediaSourceId = result.id;
+			source = result.url;
+		} else {
+			source = (await this.loadSourceFile(videoUrl)).file;
+		}
 
 		// Relative URL so it resolves in both dev (http) and packaged (file://) builds
 		const wasmUrl = new URL("./wasm/web-demuxer.wasm", window.location.href).href;
 		this.demuxer = new WebDemuxer({ wasmFilePath: wasmUrl });
 		await this.withTimeout(
-			this.demuxer.load(file),
+			this.demuxer.load(source),
 			SOURCE_LOAD_TIMEOUT_MS,
 			"Timed out while parsing the source video.",
 		);
@@ -276,24 +300,30 @@ export class StreamingVideoDecoder {
 		const hintedDurationSec = Math.max(containerDurationSec, streamDurationSec, 0);
 		const scanEndSec =
 			hintedDurationSec > 0 ? hintedDurationSec + 0.5 : SCAN_UNBOUNDED_FALLBACK_SEC;
-		let maxPacketEndUs = 0;
-		const scanReader = this.demuxer.read("video", 0, scanEndSec).getReader();
-		try {
-			while (true) {
-				const { done, value } = await scanReader.read();
-				if (done || !value) break;
-				const endUs = value.timestamp + (value.duration ?? 0);
-				if (endUs > maxPacketEndUs) maxPacketEndUs = endUs;
-			}
-		} finally {
+		let validatedDuration = getIndexedVideoDuration(
+			mediaInfo.format_name,
+			mediaInfo.duration,
+			streamDurationSec,
+		);
+		if (validatedDuration === null) {
+			let maxPacketEndUs = 0;
+			const scanReader = this.demuxer.read("video", 0, scanEndSec).getReader();
 			try {
-				await scanReader.cancel();
-			} catch {
-				/* already closed */
+				while (!this.cancelled) {
+					const { done, value } = await scanReader.read();
+					if (done || !value) break;
+					const endUs = value.timestamp + (value.duration ?? 0);
+					if (endUs > maxPacketEndUs) maxPacketEndUs = endUs;
+				}
+			} finally {
+				try {
+					await scanReader.cancel();
+				} catch {
+					/* already closed */
+				}
 			}
+			validatedDuration = validateDuration(mediaInfo.duration, maxPacketEndUs / 1_000_000);
 		}
-		const scannedDuration = maxPacketEndUs / 1_000_000;
-		const validatedDuration = validateDuration(mediaInfo.duration, scannedDuration);
 
 		this.metadata = {
 			width: videoStream?.width || 1920,
@@ -764,6 +794,10 @@ export class StreamingVideoDecoder {
 
 	/** Cancels decoding and releases the VideoDecoder and WebDemuxer resources. */
 	destroy(): void {
+		if (this.mediaSourceId) {
+			void window.electronAPI.closeMediaSource(this.mediaSourceId).catch(console.warn);
+			this.mediaSourceId = null;
+		}
 		this.cancelled = true;
 
 		if (this.decoder) {

@@ -174,6 +174,13 @@ export class VideoExporter {
 	}
 
 	async export(): Promise<ExportResult> {
+		if (typeof VideoEncoder === "undefined" || typeof VideoDecoder === "undefined") {
+			return {
+				success: false,
+				error:
+					"Video encoding is unavailable in this editor. Close and reopen the editor, then try again.",
+			};
+		}
 		const encoderPreferences = this.getEncoderPreferences();
 		let lastError: Error | null = null;
 

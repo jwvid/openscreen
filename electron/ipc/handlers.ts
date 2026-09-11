@@ -43,6 +43,7 @@ import type { CursorRecordingSession } from "../native-bridge/cursor/recording/s
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { resolveBundledAssetPath } from "./bundledAsset";
 import { ExportStreamRegistry } from "./exportStream";
+import { MediaReadServer } from "./mediaReadServer";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 
@@ -65,6 +66,7 @@ const ALLOWED_IMPORT_VIDEO_EXTENSIONS = new Set([
 const PREVIEW_AUDIO_DIR = path.join(app.getPath("userData"), "preview-audio");
 const nativeMacCaptureEvents = new EventEmitter();
 const exportStreamRegistry = new ExportStreamRegistry();
+const mediaReadServer = new MediaReadServer();
 
 // Paths the user approved via file picker or project load (i.e. outside the default dirs).
 const approvedPaths = new Set<string>();
@@ -2632,6 +2634,28 @@ export function registerIpcHandlers(
 		}
 	});
 
+	const mediaReaderOwners = new Set<number>();
+	ipcMain.handle("open-media-source", async (event, filePath: string) => {
+		try {
+			const approved = await approveReadableVideoPath(filePath);
+			if (!approved) return { success: false, message: "Media path is not approved" };
+			const owner = event.sender.id;
+			if (!mediaReaderOwners.has(owner)) {
+				mediaReaderOwners.add(owner);
+				event.sender.once("destroyed", () => {
+					mediaReaderOwners.delete(owner);
+					mediaReadServer.releaseOwner(owner);
+				});
+			}
+			return { success: true, ...(await mediaReadServer.open(approved, owner)) };
+		} catch (error) {
+			return { success: false, message: String(error) };
+		}
+	});
+	ipcMain.handle("close-media-source", (event, id: string) => {
+		mediaReadServer.release(id, event.sender.id);
+	});
+
 	ipcMain.handle("read-binary-file", async (_, filePath: string, maxBytes?: number) => {
 		try {
 			const normalizedPath = await approveReadableVideoPath(filePath);
@@ -2642,11 +2666,12 @@ export function registerIpcHandlers(
 				};
 			}
 
-			if (
-				typeof maxBytes === "number" &&
-				Number.isFinite(maxBytes) &&
-				(await fs.stat(normalizedPath)).size > maxBytes
-			) {
+			// Large structured-clone payloads can crash Electron's main process.
+			const budget =
+				typeof maxBytes === "number" && Number.isFinite(maxBytes)
+					? Math.min(maxBytes, 64 * 1024 * 1024)
+					: 64 * 1024 * 1024;
+			if ((await fs.stat(normalizedPath)).size > budget) {
 				return {
 					success: false,
 					message: "Source exceeds the memory budget for this optional operation",

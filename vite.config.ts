@@ -49,7 +49,8 @@ export default defineConfig({
 		minify: "terser",
 		terserOptions: {
 			compress: {
-				drop_console: true,
+				// Keep warnings/errors in packaged builds so export failures remain diagnosable.
+				drop_console: false,
 				drop_debugger: true,
 				pure_funcs: ["console.log", "console.debug"],
 			},

@@ -196,9 +196,33 @@ export function createEditorWindow(): BrowserWindow {
 
 	win.maximize();
 
-	// Show only once painted to avoid a white flash on cold Vite start.
-	win.once("ready-to-show", () => {
-		if (!HEADLESS) win.show();
+	// Chromium can omit WebCodecs on the first document when this renderer's
+	// web preferences differ from the HUD. Recover before the window is visible
+	// and before the user can make edits, not at the start of an export.
+	let checkedCodecs = false;
+	let retriedCodecs = false;
+	let painted = false;
+	win.on("ready-to-show", () => {
+		painted = true;
+		if (checkedCodecs && !HEADLESS) win.show();
+	});
+	win.webContents.on("did-finish-load", async () => {
+		if (checkedCodecs || win.isDestroyed()) return;
+		try {
+			const codecsReady = await win.webContents.executeJavaScript(
+				"typeof VideoEncoder === 'function' && typeof VideoDecoder === 'function'",
+			);
+			if (!codecsReady && !retriedCodecs) {
+				retriedCodecs = true;
+				// ready-to-show need not fire again for a replacement document.
+				win.webContents.reload();
+				return;
+			}
+		} catch (error) {
+			console.warn("Could not check editor codecs:", error);
+		}
+		checkedCodecs = true;
+		if (painted && !HEADLESS && !win.isDestroyed()) win.show();
 	});
 
 	// Inject dark background before any React paint so the sub-titlebar area never

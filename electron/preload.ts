@@ -174,6 +174,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	readBinaryFile: (filePath: string, maxBytes?: number) => {
 		return ipcRenderer.invoke("read-binary-file", filePath, maxBytes);
 	},
+	openMediaSource: (filePath: string) => ipcRenderer.invoke("open-media-source", filePath),
+	closeMediaSource: (id: string) => ipcRenderer.invoke("close-media-source", id),
 	readBundledAsset: (relativePath: string) => {
 		return ipcRenderer.invoke("read-bundled-asset", relativePath);
 	},
