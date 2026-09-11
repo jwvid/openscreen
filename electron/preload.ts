@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getSelectedSource: () => {
 		return ipcRenderer.invoke("get-selected-source");
 	},
+	initializeRecorder: () => ipcRenderer.invoke("initialize-recorder"),
 	requestCameraAccess: () => {
 		return ipcRenderer.invoke("request-camera-access");
 	},
@@ -170,8 +171,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getCurrentRecordingSession: () => {
 		return ipcRenderer.invoke("get-current-recording-session");
 	},
-	readBinaryFile: (filePath: string) => {
-		return ipcRenderer.invoke("read-binary-file", filePath);
+	readBinaryFile: (filePath: string, maxBytes?: number) => {
+		return ipcRenderer.invoke("read-binary-file", filePath, maxBytes);
 	},
 	readBundledAsset: (relativePath: string) => {
 		return ipcRenderer.invoke("read-bundled-asset", relativePath);

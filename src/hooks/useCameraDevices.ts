@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { loadRecorderPreferences } from "@/lib/recorderPreferences";
 
 export interface CameraDevice {
 	deviceId: string;
@@ -8,7 +9,9 @@ export interface CameraDevice {
 
 export function useCameraDevices(enabled: boolean = false) {
 	const [devices, setDevices] = useState<CameraDevice[]>([]);
-	const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+	const [selectedDeviceId, setSelectedDeviceId] = useState<string>(
+		() => loadRecorderPreferences().webcamDeviceId || "",
+	);
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const selectedDeviceIdRef = useRef(selectedDeviceId);
@@ -39,7 +42,12 @@ export function useCameraDevices(enabled: boolean = false) {
 					const currentId = selectedDeviceIdRef.current;
 					const stillAvailable = videoInputs.some((d) => d.deviceId === currentId);
 					if (!currentId || !stillAvailable) {
-						setSelectedDeviceId(videoInputs[0]?.deviceId ?? "");
+						setSelectedDeviceId(
+							videoInputs.find((d) => d.label === loadRecorderPreferences().webcamDeviceName)
+								?.deviceId ||
+								videoInputs[0]?.deviceId ||
+								"",
+						);
 					}
 					setIsLoading(false);
 				}

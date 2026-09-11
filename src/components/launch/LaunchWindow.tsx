@@ -27,7 +27,6 @@ import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import { useCameraDevices } from "../../hooks/useCameraDevices";
 import { useMicrophoneDevices } from "../../hooks/useMicrophoneDevices";
 import { useScreenRecorder } from "../../hooks/useScreenRecorder";
-import { requestCameraAccess } from "../../lib/requestCameraAccess";
 import { formatTimePadded } from "../../utils/timeUtils";
 import { AudioLevelMeter } from "../ui/audio-level-meter";
 import { Button } from "../ui/button";
@@ -193,14 +192,14 @@ export function LaunchWindow() {
 	});
 
 	useEffect(() => {
-		if (selectedMicId && selectedMicId !== "default") {
+		if (micDevices.length > 0) {
 			setMicrophoneDeviceId(selectedMicId);
 			setMicrophoneDeviceName(micDevices.find((d) => d.deviceId === selectedMicId)?.label);
 		}
 	}, [selectedMicId, micDevices, setMicrophoneDeviceId, setMicrophoneDeviceName]);
 
 	useEffect(() => {
-		if (selectedCameraId) {
+		if (selectedCameraId && cameraDevices.length > 0) {
 			setWebcamDeviceId(selectedCameraId);
 			setWebcamDeviceName(cameraDevices.find((d) => d.deviceId === selectedCameraId)?.label);
 		}
@@ -227,13 +226,17 @@ export function LaunchWindow() {
 	}, []);
 
 	useEffect(() => {
-		if (!import.meta.env.DEV) {
-			return;
-		}
-
-		void requestCameraAccess().catch((error) => {
-			console.warn("Failed to trigger camera access request during development:", error);
-		});
+		void window.electronAPI
+			?.initializeRecorder()
+			.then(async ({ selectMonitor }) => {
+				if (selectMonitor) {
+					await openSourceSelectorWithPermissionRetry({
+						openSourceSelector: () => window.electronAPI.openSourceSelector(),
+						requestScreenAccess: () => window.electronAPI.requestScreenAccess(),
+					});
+				}
+			})
+			.catch((error) => console.warn("Recorder setup failed:", error));
 	}, []);
 
 	useEffect(() => {

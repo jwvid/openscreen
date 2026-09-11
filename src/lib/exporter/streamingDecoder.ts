@@ -141,15 +141,18 @@ export function shouldFailDecodeEndedEarly({
  */
 export async function loadFileAsArrayBuffer(
 	videoUrl: string,
+	maxBytes?: number,
 ): Promise<{ data: ArrayBuffer; contentType: string }> {
 	const isRemoteUrl = /^(https?:|blob:|data:)/i.test(videoUrl);
 
 	if (!isRemoteUrl && window.electronAPI) {
-		const { blob } = await StreamingVideoDecoder.loadLocalSourceFile(videoUrl);
+		const { blob } = await StreamingVideoDecoder.loadLocalSourceFile(videoUrl, maxBytes);
 		return { data: await blob.arrayBuffer(), contentType: "" };
 	}
 
 	const { blob } = await StreamingVideoDecoder.loadRemoteSourceFile(videoUrl);
+	if (maxBytes !== undefined && blob.size > maxBytes)
+		throw new Error("Source exceeds memory budget");
 	return { data: await blob.arrayBuffer(), contentType: blob.type };
 }
 
@@ -196,8 +199,11 @@ export class StreamingVideoDecoder {
 	}
 
 	/** Loads a local video file via the Electron IPC bridge. */
-	static async loadLocalSourceFile(videoUrl: string): Promise<{ file: File; blob: Blob }> {
-		const result = await window.electronAPI.readBinaryFile(videoUrl);
+	static async loadLocalSourceFile(
+		videoUrl: string,
+		maxBytes?: number,
+	): Promise<{ file: File; blob: Blob }> {
+		const result = await window.electronAPI.readBinaryFile(videoUrl, maxBytes);
 		if (!result.success || !result.data) {
 			throw new Error(result.message || result.error || "Failed to read source video");
 		}

@@ -11,6 +11,7 @@ import {
 	type NativeWindowsRecordingRequest,
 	parseWindowHandleFromSourceId,
 } from "@/lib/nativeWindowsRecording";
+import { loadRecorderPreferences, saveRecorderPreferences } from "@/lib/recorderPreferences";
 import type { CursorCaptureMode, RecordedVideoAssetInput } from "@/lib/recordingSession";
 import { requestCameraAccess } from "@/lib/requestCameraAccess";
 import { createRecorderHandle, type RecorderHandle } from "./recorderHandle";
@@ -92,14 +93,40 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [recording, setRecording] = useState(false);
 	const [paused, setPaused] = useState(false);
 	const [elapsedSeconds, setElapsedSeconds] = useState(0);
-	const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
-	const [microphoneDeviceId, setMicrophoneDeviceId] = useState<string | undefined>(undefined);
-	const [microphoneDeviceName, setMicrophoneDeviceName] = useState<string | undefined>(undefined);
-	const [webcamDeviceId, setWebcamDeviceId] = useState<string | undefined>(undefined);
-	const [webcamDeviceName, setWebcamDeviceName] = useState<string | undefined>(undefined);
-	const [systemAudioEnabled, setSystemAudioEnabled] = useState(false);
-	const [webcamEnabled, setWebcamEnabledState] = useState(false);
-	const [cursorCaptureMode, setCursorCaptureMode] = useState<CursorCaptureMode>("editable-overlay");
+	const [preferences] = useState(loadRecorderPreferences);
+	const [microphoneEnabled, setMicrophoneEnabled] = useState(preferences.microphoneEnabled);
+	const [microphoneDeviceId, setMicrophoneDeviceId] = useState(preferences.microphoneDeviceId);
+	const [microphoneDeviceName, setMicrophoneDeviceName] = useState(
+		preferences.microphoneDeviceName,
+	);
+	const [webcamDeviceId, setWebcamDeviceId] = useState(preferences.webcamDeviceId);
+	const [webcamDeviceName, setWebcamDeviceName] = useState(preferences.webcamDeviceName);
+	const [systemAudioEnabled, setSystemAudioEnabled] = useState(preferences.systemAudioEnabled);
+	const [webcamEnabled, setWebcamEnabledState] = useState(preferences.webcamEnabled);
+	const [cursorCaptureMode, setCursorCaptureMode] = useState<CursorCaptureMode>(
+		preferences.cursorCaptureMode,
+	);
+	useEffect(() => {
+		saveRecorderPreferences({
+			microphoneEnabled,
+			microphoneDeviceId,
+			microphoneDeviceName,
+			webcamDeviceId,
+			webcamDeviceName,
+			systemAudioEnabled,
+			webcamEnabled,
+			cursorCaptureMode,
+		});
+	}, [
+		microphoneEnabled,
+		microphoneDeviceId,
+		microphoneDeviceName,
+		webcamDeviceId,
+		webcamDeviceName,
+		systemAudioEnabled,
+		webcamEnabled,
+		cursorCaptureMode,
+	]);
 	const screenRecorder = useRef<RecorderHandle | null>(null);
 	const webcamRecorder = useRef<RecorderHandle | null>(null);
 	const nativeWindowsRecording = useRef<NativeWindowsRecordingHandle | null>(null);
@@ -234,6 +261,21 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 		const acquire = async () => {
 			try {
+				if (webcamDeviceId) {
+					const cameras = (await navigator.mediaDevices.enumerateDevices()).filter(
+						(device) => device.kind === "videoinput",
+					);
+					if (cancelled) return;
+					if (cameras.length > 0 && !cameras.some((device) => device.deviceId === webcamDeviceId)) {
+						const replacement =
+							cameras.find(
+								(device) => device.label === loadRecorderPreferences().webcamDeviceName,
+							) || cameras[0];
+						setWebcamDeviceId(replacement.deviceId);
+						setWebcamDeviceName(replacement.label || undefined);
+						return;
+					}
+				}
 				const stream = await navigator.mediaDevices.getUserMedia({
 					audio: false,
 					video: webcamDeviceId

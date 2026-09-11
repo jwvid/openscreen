@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
 	app,
 	BrowserWindow,
+	dialog,
 	ipcMain,
 	Menu,
 	nativeImage,
@@ -365,13 +366,36 @@ function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 }
 
 function createEditorWindowWrapper() {
-	if (mainWindow) {
-		isForceClosing = true;
-		mainWindow.close();
-		isForceClosing = false;
-		mainWindow = null;
-	}
+	const previousWindow = mainWindow;
+	// Keep a window alive throughout the transition: closing the HUD first
+	// emits window-all-closed, which quits the application.
 	mainWindow = createEditorWindow();
+	const editorWindow = mainWindow;
+	editorWindow.webContents.on("render-process-gone", (_event, details) => {
+		if (details.reason === "clean-exit") return;
+		const logPath = path.join(app.getPath("userData"), "editor-crashes.log");
+		void fs
+			.appendFile(logPath, `${new Date().toISOString()} ${JSON.stringify(details)}\n`)
+			.catch(console.error);
+		void dialog
+			.showMessageBox(editorWindow, {
+				type: "error",
+				message: "The editor stopped unexpectedly. Your recording files are still on disk.",
+				detail: `Reopen the .recovery.openscreen file beside your recording.\nRecordings: ${RECORDINGS_DIR}\nDiagnostic log: ${logPath}`,
+				buttons: ["Reload editor", "Close"],
+			})
+			.then(({ response }) => {
+				if (editorWindow.isDestroyed()) return;
+				if (response === 0) editorWindow.reload();
+				else forceCloseEditorWindow(editorWindow);
+			})
+			.catch(console.error);
+	});
+	if (previousWindow && !previousWindow.isDestroyed()) {
+		isForceClosing = true;
+		previousWindow.close();
+		isForceClosing = false;
+	}
 	editorHasUnsavedChanges = false;
 
 	mainWindow.on("close", (event) => {
@@ -532,13 +556,14 @@ app.whenReady().then(async () => {
 	await ensureRecordingsDir();
 
 	function switchToHudWrapper() {
-		if (mainWindow) {
-			isForceClosing = true;
-			mainWindow.close();
-			isForceClosing = false;
-			mainWindow = null;
-		}
+		const previousWindow = mainWindow;
+		mainWindow = null;
 		showMainWindow();
+		if (previousWindow && !previousWindow.isDestroyed()) {
+			isForceClosing = true;
+			previousWindow.close();
+			isForceClosing = false;
+		}
 	}
 
 	registerIpcHandlers(

@@ -50,6 +50,7 @@ const PROJECT_FILE_EXTENSION = "openscreen";
 export const SHORTCUTS_FILE = path.join(app.getPath("userData"), "shortcuts.json");
 const RECORDING_FILE_PREFIX = "recording-";
 const RECORDING_SESSION_SUFFIX = ".session.json";
+const MONITOR_PREFERENCE_FILE = path.join(app.getPath("userData"), "recorder-monitor.json");
 const ALLOWED_IMPORT_VIDEO_EXTENSIONS = new Set([
 	".webm",
 	".mp4",
@@ -323,21 +324,33 @@ async function getApprovedProjectSession(
 		trustedDirs.push(path.dirname(path.resolve(projectFilePath)));
 	}
 
-	const screenVideoPath = await approveReadableVideoPath(media.screenVideoPath, trustedDirs);
+	const approveProjectVideo = async (videoPath: string) =>
+		(await approveReadableVideoPath(videoPath, trustedDirs)) ??
+		(projectFilePath
+			? await approveReadableVideoPath(
+					path.join(path.dirname(projectFilePath), videoPath.split(/[\\/]/).pop() || ""),
+					trustedDirs,
+				)
+			: null);
+	const screenVideoPath = await approveProjectVideo(media.screenVideoPath);
 	if (!screenVideoPath) {
 		throw new Error("Project references an invalid or unsupported screen video path");
 	}
 
 	const webcamVideoPath = media.webcamVideoPath
-		? await approveReadableVideoPath(media.webcamVideoPath, trustedDirs)
+		? await approveProjectVideo(media.webcamVideoPath)
 		: undefined;
 	if (media.webcamVideoPath && !webcamVideoPath) {
 		throw new Error("Project references an invalid or unsupported webcam video path");
 	}
 
-	return webcamVideoPath
-		? { screenVideoPath, webcamVideoPath, createdAt: Date.now() }
-		: { screenVideoPath, createdAt: Date.now() };
+	rawProject.media = { ...media, screenVideoPath, webcamVideoPath: webcamVideoPath || undefined };
+	return {
+		...media,
+		screenVideoPath,
+		webcamVideoPath: webcamVideoPath || undefined,
+		createdAt: Date.now(),
+	};
 }
 
 type SelectedSource = {
@@ -1215,6 +1228,16 @@ async function loadRecordedSessionForVideoPath(
 		}
 
 		const normalizedVideoPath = normalizePath(videoPath);
+		// A recording and its sidecars may have been moved from another computer.
+		if (path.basename(session.screenVideoPath) === path.basename(videoPath)) {
+			session.screenVideoPath = videoPath;
+			if (session.webcamVideoPath) {
+				session.webcamVideoPath = path.join(
+					path.dirname(videoPath),
+					path.basename(session.webcamVideoPath),
+				);
+			}
+		}
 		const matchesScreen = normalizePath(session.screenVideoPath) === normalizedVideoPath;
 		const matchesWebcam =
 			typeof session.webcamVideoPath === "string" &&
@@ -1321,6 +1344,16 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("select-source", async (_, source: SelectedSource) => {
 		selectedSource = source;
+		try {
+			await fs.writeFile(
+				MONITOR_PREFERENCE_FILE,
+				JSON.stringify({
+					displayId: source.id?.startsWith("screen:") ? source.display_id : null,
+				}),
+			);
+		} catch (error) {
+			console.warn("Could not remember monitor:", error);
+		}
 		// Reuse the exact source object returned during enumeration to avoid
 		// Windows window-source id mismatches across separate getSources() calls.
 		selectedDesktopSource =
@@ -1348,6 +1381,43 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("get-selected-source", () => {
 		return selectedSource;
+	});
+
+	let recorderSetup: Promise<{ selectMonitor: boolean }> | undefined;
+	ipcMain.handle("initialize-recorder", () => {
+		if (process.env.HEADLESS === "true") return { selectMonitor: false };
+		if (recorderSetup) return recorderSetup.then(() => ({ selectMonitor: false }));
+		recorderSetup = (async () => {
+			if (process.platform === "darwin") {
+				for (const kind of ["microphone", "camera"] as const) {
+					if (systemPreferences.getMediaAccessStatus(kind) === "not-determined") {
+						await systemPreferences.askForMediaAccess(kind);
+					}
+				}
+				await requestMacCursorAccessibilityAccess();
+			}
+			const access = await requestScreenAccess();
+			if (access.granted && !selectedSource) {
+				try {
+					const saved = JSON.parse(await fs.readFile(MONITOR_PREFERENCE_FILE, "utf-8"));
+					if (typeof saved.displayId === "string" && saved.displayId) {
+						const sources = await desktopCapturer.getSources({
+							types: ["screen"],
+							thumbnailSize: { width: 0, height: 0 },
+						});
+						const source = sources.find((candidate) => candidate.display_id === saved.displayId);
+						if (source) {
+							selectedDesktopSource = source;
+							selectedSource = { id: source.id, display_id: source.display_id, name: source.name };
+						}
+					}
+				} catch {
+					/* First launch, missing monitor, or damaged preferences: ask again. */
+				}
+			}
+			return { selectMonitor: !selectedSource };
+		})();
+		return recorderSetup;
 	});
 
 	ipcMain.handle("request-camera-access", async () => {
@@ -1460,8 +1530,8 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("switch-to-editor", () => {
-		// createEditorWindow already closes the current mainWindow (the HUD) before
-		// opening the editor. Closing it here too double-closes, leaving ghost
+		// The wrapper owns the complete HUD-to-editor transition.
+		// Closing it here too double-closes, leaving ghost
 		// transparent windows and compounding the HUD shadow each cycle.
 		createEditorWindow();
 	});
@@ -2562,7 +2632,7 @@ export function registerIpcHandlers(
 		}
 	});
 
-	ipcMain.handle("read-binary-file", async (_, filePath: string) => {
+	ipcMain.handle("read-binary-file", async (_, filePath: string, maxBytes?: number) => {
 		try {
 			const normalizedPath = await approveReadableVideoPath(filePath);
 			if (!normalizedPath) {
@@ -2572,6 +2642,16 @@ export function registerIpcHandlers(
 				};
 			}
 
+			if (
+				typeof maxBytes === "number" &&
+				Number.isFinite(maxBytes) &&
+				(await fs.stat(normalizedPath)).size > maxBytes
+			) {
+				return {
+					success: false,
+					message: "Source exceeds the memory budget for this optional operation",
+				};
+			}
 			const data = await fs.readFile(normalizedPath);
 			return {
 				success: true,
@@ -2848,11 +2928,34 @@ export function registerIpcHandlers(
 		return setCurrentVideoPath(path);
 	});
 
-	ipcMain.handle("set-current-recording-session", (_, session: RecordingSession | null) => {
+	ipcMain.handle("set-current-recording-session", async (_, session: RecordingSession | null) => {
 		const normalizedSession = normalizeRecordingSession(session);
 		setCurrentRecordingSessionState(normalizedSession);
 		currentVideoPath = normalizedSession?.screenVideoPath ?? null;
 		currentProjectPath = null;
+		if (normalizedSession && isPathAllowed(normalizedSession.screenVideoPath)) {
+			const recoveryPath = normalizedSession.screenVideoPath.replace(
+				/\.[^.]+$/,
+				".recovery.openscreen",
+			);
+			try {
+				await fs.writeFile(
+					recoveryPath,
+					JSON.stringify(
+						{
+							version: 2,
+							media: normalizedSession,
+							editor: {},
+						},
+						null,
+						2,
+					),
+					{ flag: "wx" },
+				);
+			} catch (error) {
+				console.warn("Recovery project already exists or could not be saved:", error);
+			}
+		}
 		return { success: true, session: currentRecordingSession };
 	});
 

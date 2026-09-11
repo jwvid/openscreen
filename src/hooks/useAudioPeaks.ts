@@ -88,7 +88,9 @@ export function useAudioPeaks(videoUrl?: string): Float32Array | null {
 
 		(async () => {
 			try {
-				const { data: arrayBuffer } = await loadFileAsArrayBuffer(videoUrl);
+				// Waveforms are optional. Never copy multi-gigabyte recordings through
+				// IPC and WebAudio just to draw the trim timeline.
+				const { data: arrayBuffer } = await loadFileAsArrayBuffer(videoUrl, 32 * 1024 * 1024);
 				if (cancelled) return;
 				const audioBuffer = await getAudioCtx().decodeAudioData(arrayBuffer);
 				if (cancelled) return;

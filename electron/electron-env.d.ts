@@ -43,6 +43,7 @@ interface Window {
 		}>;
 		selectSource: (source: ProcessedDesktopSource) => Promise<ProcessedDesktopSource | null>;
 		getSelectedSource: () => Promise<ProcessedDesktopSource | null>;
+		initializeRecorder: () => Promise<{ selectMonitor: boolean }>;
 		requestCameraAccess: () => Promise<{
 			success: boolean;
 			granted: boolean;
@@ -228,7 +229,10 @@ interface Window {
 			success: boolean;
 			session?: import("../src/lib/recordingSession").RecordingSession;
 		}>;
-		readBinaryFile: (filePath: string) => Promise<{
+		readBinaryFile: (
+			filePath: string,
+			maxBytes?: number,
+		) => Promise<{
 			success: boolean;
 			data?: ArrayBuffer;
 			path?: string;

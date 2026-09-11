@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { loadRecorderPreferences } from "@/lib/recorderPreferences";
 
 export interface MicrophoneDevice {
 	deviceId: string;
@@ -8,7 +9,11 @@ export interface MicrophoneDevice {
 
 export function useMicrophoneDevices(enabled: boolean = true) {
 	const [devices, setDevices] = useState<MicrophoneDevice[]>([]);
-	const [selectedDeviceId, setSelectedDeviceId] = useState<string>("default");
+	const [selectedDeviceId, setSelectedDeviceId] = useState<string>(
+		() => loadRecorderPreferences().microphoneDeviceId || "default",
+	);
+	const selectedDeviceIdRef = useRef(selectedDeviceId);
+	selectedDeviceIdRef.current = selectedDeviceId;
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -20,12 +25,13 @@ export function useMicrophoneDevices(enabled: boolean = true) {
 		let mounted = true;
 
 		const loadDevices = async () => {
+			let stream: MediaStream | undefined;
 			try {
 				setIsLoading(true);
 				setError(null);
 
 				// Request permission first to get actual device labels
-				const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+				stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
 				const allDevices = await navigator.mediaDevices.enumerateDevices();
 				const audioInputs = allDevices
@@ -41,8 +47,13 @@ export function useMicrophoneDevices(enabled: boolean = true) {
 
 				if (mounted) {
 					setDevices(audioInputs);
-					if (selectedDeviceId === "default" && audioInputs.length > 0) {
-						setSelectedDeviceId(audioInputs[0].deviceId);
+					if (!audioInputs.some((d) => d.deviceId === selectedDeviceIdRef.current)) {
+						setSelectedDeviceId(
+							audioInputs.find((d) => d.label === loadRecorderPreferences().microphoneDeviceName)
+								?.deviceId ||
+								audioInputs[0]?.deviceId ||
+								"default",
+						);
 					}
 					setIsLoading(false);
 				}
@@ -54,6 +65,8 @@ export function useMicrophoneDevices(enabled: boolean = true) {
 					setIsLoading(false);
 					console.error("Error loading microphone devices:", err);
 				}
+			} finally {
+				stream?.getTracks().forEach((track) => track.stop());
 			}
 		};
 
@@ -69,7 +82,7 @@ export function useMicrophoneDevices(enabled: boolean = true) {
 			mounted = false;
 			navigator.mediaDevices.removeEventListener("devicechange", handleDeviceChange);
 		};
-	}, [enabled, selectedDeviceId]);
+	}, [enabled]);
 
 	return {
 		devices,
